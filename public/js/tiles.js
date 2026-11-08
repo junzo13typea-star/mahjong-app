@@ -265,7 +265,6 @@ function renderSouGraphic(num, isRed) {
     </div>
   `;
 }
-}
 
 // Global expose
 root.TILE_DEFS = TILE_DEFS;
