@@ -185,6 +185,22 @@
    * @returns {number} -1: 和了(Agari), 0: テンパイ(Tenpai), 1: 1向聴, 2: 2向聴...
    */
   function calculateShanten(handTiles, meldCount = 0) {
+    // counts配列（34種の枚数）が渡された場合は内訳オブジェクトを返す（app.js 用）
+    if (Array.isArray(handTiles) && typeof handTiles[0] === 'number') {
+      const counts = handTiles;
+      const general = calcStandardShanten(counts, meldCount);
+      let chitoi = 99;
+      let kokushi = 99;
+      let min = general;
+      const total = counts.reduce((a, b) => a + b, 0);
+      if (meldCount === 0 && total >= 13) {
+        chitoi = calcChiitoiShanten(counts);
+        kokushi = calcKokushiShanten(counts);
+        min = Math.min(general, chitoi, kokushi);
+      }
+      return { min, general, chitoi, kokushi };
+    }
+
     const counts = handToCounts(handTiles);
     const standard = calcStandardShanten(counts, meldCount);
 
