@@ -354,7 +354,8 @@ body.mat-theme {
   align-items: center;
   gap: 3px;
   flex-wrap: nowrap;
-  min-height: 58px;
+  min-height: 68px;
+  padding: 4px 0;
 }
 
 .empty-tray-msg {
@@ -384,16 +385,17 @@ body.mat-theme {
 }
 
 .tile-slot {
-  width: 44px;
-  height: 60px;
-  border: 2px dashed rgba(245, 158, 11, 0.4);
+  width: 46px;
+  height: 64px;
+  border: 2px dashed rgba(245, 158, 11, 0.45);
   border-radius: var(--radius-tile);
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.28);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .tile-slot:hover {
@@ -464,20 +466,22 @@ body.mat-theme {
   display: block;
 }
 
-/* ================= 麻雀牌コンポーネント（3Dリアルスタイル） ================= */
-.mj-tile {
-  width: 44px;
-  height: 60px;
+/* ================= 麻雀牌コンポーネント（3Dリアル・高視認性スタイル） ================= */
+.mj-tile,
+.mahjong-tile {
+  width: 46px;
+  height: 64px;
   position: relative;
-  background: var(--tile-bg-front);
-  border-radius: var(--radius-tile);
-  border-top: 1px solid #ffffff;
-  border-left: 1px solid #f1ece1;
-  border-right: 2px solid #b5ab99;
-  border-bottom: 4px solid var(--tile-bg-back); /* 下部の黄色竹層 */
+  background: linear-gradient(180deg, #ffffff 0%, #fbf8f2 50%, #f3ede2 100%);
+  border-radius: 6px;
+  border-top: 1.5px solid #ffffff;
+  border-left: 1.5px solid #fcfaf5;
+  border-right: 2px solid #b8ac98;
+  border-bottom: 5px solid #d97706; /* 背面の本格的な竹・黄アクリル層 */
   box-shadow: 
-    0 3px 6px var(--tile-shadow),
-    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    0 4px 10px rgba(0, 0, 0, 0.48),
+    0 1px 3px rgba(0, 0, 0, 0.25),
+    inset 0 1.5px 1px #ffffff,
     inset -1px -1px 2px rgba(0, 0, 0, 0.08);
   display: inline-flex;
   flex-direction: column;
@@ -487,101 +491,168 @@ body.mat-theme {
   cursor: pointer;
   transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.12s;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
-.mj-tile:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55);
+.mj-tile:hover,
+.mahjong-tile:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.6), 0 0 10px rgba(245, 158, 11, 0.3);
 }
 
-.mj-tile:active {
-  transform: translateY(0);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+.mj-tile:active,
+.mahjong-tile:active {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
-.mj-tile.selected {
-  outline: 2px solid var(--gold-accent);
-  box-shadow: 0 0 12px var(--gold-glow);
+.mj-tile.selected,
+.mahjong-tile.selected {
+  outline: 2.5px solid #f59e0b;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.7);
   transform: translateY(-6px);
 }
 
-.mj-tile.tile-red-dora {
-  background: #fff8f8;
+.mj-tile.agari-tile,
+.mahjong-tile.agari-tile {
+  border-top-color: #fef08a;
+  box-shadow: 0 0 16px rgba(234, 179, 8, 0.6), 0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
-.mj-tile-face {
+.mj-tile.tile-red-dora,
+.mahjong-tile.tile-red-dora {
+  background: linear-gradient(180deg, #fff5f5 0%, #fef2f2 50%, #fee2e2 100%);
+}
+
+.mj-tile-face,
+.tile-front {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2px;
+  padding: 3px 2px;
+  position: relative;
 }
 
-/* 萬子スタイル */
-.man-text {
-  font-family: 'Zen Old Mincho', 'Noto Serif JP', serif;
+/* 萬子スタイル（極太・高コントラスト深紅） */
+.man-text,
+.tile-man-graphic {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Zen Old Mincho', 'Noto Serif JP', 'Songti SC', serif;
   font-weight: 900;
-  line-height: 1;
+  line-height: 0.95;
   text-align: center;
 }
 
 .man-num {
-  font-size: 1.15rem;
-  color: #c92a2a;
+  font-size: 1.25rem;
+  color: #b91c1c;
+  letter-spacing: -0.04em;
+  filter: drop-shadow(0 0.5px 0.5px rgba(255, 255, 255, 0.8));
 }
 
 .man-kanji {
-  font-size: 1.05rem;
-  color: #c92a2a;
-  margin-top: -2px;
+  font-size: 1.15rem;
+  color: #b91c1c;
+  margin-top: -1px;
+  filter: drop-shadow(0 0.5px 0.5px rgba(255, 255, 255, 0.8));
 }
 
-/* 字牌スタイル */
-.ji-text {
-  font-family: 'Zen Old Mincho', 'Noto Serif JP', serif;
-  font-size: 1.45rem;
+.tile-man-graphic.is-red .man-num,
+.tile-man-graphic.is-red .man-kanji {
+  color: #ef4444 !important;
+}
+
+/* 字牌スタイル（特大・威厳ある太字毛筆） */
+.ji-text,
+.tile-honor-graphic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Zen Old Mincho', 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 1.55rem;
   font-weight: 900;
   text-align: center;
+  line-height: 1;
+  filter: drop-shadow(0 0.5px 0.5px rgba(255, 255, 255, 0.85));
 }
 
-/* 筒子・索子 SVG */
-.pin-grid, .sou-grid {
-  width: 90%;
-  height: 90%;
+/* 白（伝統の二重枠線：画面上で確実に白牌と判別可能） */
+.haku-frame,
+.tile-haku-box {
+  width: 72%;
+  height: 74%;
+  border: 2.5px solid #64748b;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.95), 0 1px 2px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.pin-svg, .sou-svg {
-  width: 100%;
-  height: 100%;
+.haku-inner-rect {
+  width: 80%;
+  height: 80%;
+  border: 1px dashed rgba(100, 116, 139, 0.45);
+  border-radius: 2px;
 }
 
-/* 赤ドラマーク */
-.red-dot-badge {
+/* 筒子・索子 SVGグラフィック */
+.pin-grid,
+.sou-grid {
+  width: 92%;
+  height: 92%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pin-svg,
+.sou-svg,
+.pin-svg-big,
+.sou-bird-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* 赤ドラマーク（宝石ルビードット） */
+.red-dot-badge,
+.red-dora-dot {
   position: absolute;
   top: 3px;
   right: 3px;
-  width: 6px;
-  height: 6px;
-  background: #ef4444;
+  width: 8px;
+  height: 8px;
+  background: radial-gradient(circle at 35% 35%, #fca5a5 0%, #ef4444 40%, #991b1b 100%);
   border-radius: 50%;
-  box-shadow: 0 0 3px #ef4444;
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.85), 0 1px 2px rgba(0, 0, 0, 0.4);
+  border: 1px solid #fef08a;
+  z-index: 5;
 }
 
-/* ミニサイズ牌（副露やドラ用） */
-.mj-tile.tile-sm {
-  width: 32px;
-  height: 44px;
+/* ミニサイズ牌（副露・ドラ・何切る候補用） */
+.mj-tile.tile-sm,
+.mahjong-tile.tile-sm {
+  width: 34px;
+  height: 48px;
   border-radius: 4px;
-  border-bottom-width: 3px;
+  border-bottom-width: 3.5px;
 }
-.mj-tile.tile-sm .man-num { font-size: 0.85rem; }
-.mj-tile.tile-sm .man-kanji { font-size: 0.75rem; }
-.mj-tile.tile-sm .ji-text { font-size: 1.05rem; }
+.mj-tile.tile-sm .man-num,
+.mahjong-tile.tile-sm .man-num { font-size: 0.92rem; }
+.mj-tile.tile-sm .man-kanji,
+.mahjong-tile.tile-sm .man-kanji { font-size: 0.82rem; }
+.mj-tile.tile-sm .ji-text,
+.mahjong-tile.tile-sm .ji-text { font-size: 1.15rem; }
+.mj-tile.tile-sm .red-dot-badge,
+.mahjong-tile.tile-sm .red-dot-badge { width: 6px; height: 6px; }
 
 /* パネル切り替え */
 .tab-panel {
@@ -1570,17 +1641,18 @@ body.mat-theme {
 
 /* モバイル調整 */
 @media (max-width: 480px) {
-  .mj-tile {
-    width: 38px;
-    height: 52px;
+  .mj-tile,
+  .mahjong-tile {
+    width: 40px;
+    height: 56px;
   }
-  .mj-tile .man-num { font-size: 1rem; }
-  .mj-tile .man-kanji { font-size: 0.9rem; }
-  .mj-tile .ji-text { font-size: 1.25rem; }
+  .mj-tile .man-num, .mahjong-tile .man-num { font-size: 1.1rem; }
+  .mj-tile .man-kanji, .mahjong-tile .man-kanji { font-size: 1rem; }
+  .mj-tile .ji-text, .mahjong-tile .ji-text { font-size: 1.35rem; }
 
   .tile-slot {
-    width: 38px;
-    height: 52px;
+    width: 40px;
+    height: 56px;
   }
 
   .palette-tiles-grid {

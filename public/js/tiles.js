@@ -77,7 +77,7 @@ function normalizeTile(tile) {
  */
 function renderTileHtml(tileCode, options = {}) {
   const def = TILE_DEFS[tileCode] || { name: '?', label: '?', type: 'unknown', color: '#666' };
-  const size = options.size || 'md'; // sm, md, lg
+  const size = options.size || (options.isSmall ? 'sm' : 'md'); // sm, md, lg
   const isSelected = options.isSelected ? 'selected' : '';
   const isAgari = options.isAgari ? 'agari-tile' : '';
   const extraClass = options.extraClass || '';
@@ -89,7 +89,7 @@ function renderTileHtml(tileCode, options = {}) {
   if (def.type === 'man') {
     const isRed = def.isRed;
     innerGraphic = `
-      <div class="tile-man-graphic ${isRed ? 'is-red' : ''}">
+      <div class="man-text tile-man-graphic ${isRed ? 'is-red' : ''}">
         <span class="man-num">${def.kanji}</span>
         <span class="man-kanji">萬</span>
       </div>
@@ -100,11 +100,15 @@ function renderTileHtml(tileCode, options = {}) {
     innerGraphic = renderSouGraphic(def.num, def.isRed);
   } else if (def.type === 'honor') {
     if (def.num === 5) {
-      // 白（枠線または無地）
-      innerGraphic = `<div class="tile-haku-box"></div>`;
+      // 白（気品ある銀縁の二重枠線：視認性とリアリティを両立）
+      innerGraphic = `
+        <div class="haku-frame tile-haku-box">
+          <span class="haku-inner-rect"></span>
+        </div>
+      `;
     } else {
       innerGraphic = `
-        <div class="tile-honor-graphic" style="color: ${def.color};">
+        <div class="ji-text tile-honor-graphic" style="color: ${def.color};">
           <span class="honor-char">${def.kanji}</span>
         </div>
       `;
@@ -112,50 +116,65 @@ function renderTileHtml(tileCode, options = {}) {
   }
 
   return `
-    <div class="mahjong-tile tile-${size} ${isSelected} ${isAgari} ${extraClass}" data-tile="${tileCode}" title="${def.name}" ${customAttrs}>
-      <div class="tile-front">
+    <div class="mj-tile mahjong-tile ${size === 'sm' ? 'tile-sm' : ''} ${isSelected} ${isAgari} ${extraClass} ${def.isRed ? 'tile-red-dora' : ''}" data-tile="${tileCode}" title="${def.name}" ${customAttrs}>
+      <div class="mj-tile-face tile-front">
         ${innerGraphic}
-        ${def.isRed ? '<span class="red-dora-dot">★</span>' : ''}
+        ${def.isRed ? '<span class="red-dot-badge" title="赤ドラ"></span>' : ''}
       </div>
     </div>
   `;
 }
 
 /**
- * 筒子 (Pin) のドットパターンSVG
+ * 筒子 (Pin) のドットパターンSVG（高コントラスト二重輪刻印デザイン）
  */
 function renderPinGraphic(num, isRed) {
   const redColor = '#dc2626';
-  const blueColor = isRed ? '#dc2626' : '#2563eb';
-  const greenColor = isRed ? '#dc2626' : '#16a34a';
+  const blueColor = isRed ? '#dc2626' : '#1d4ed8';
+  const greenColor = isRed ? '#dc2626' : '#15803d';
 
   if (num === 1) {
+    // 一筒（豪華な菊花紋章ジュエル・特大センタードット）
     return `
       <div class="pin-grid pin-1">
         <svg viewBox="0 0 100 100" class="pin-svg-big">
-          <circle cx="50" cy="50" r="42" fill="${redColor}" stroke="#b91c1c" stroke-width="4" />
-          <circle cx="50" cy="50" r="28" fill="#f87171" opacity="0.4" />
-          <circle cx="50" cy="50" r="14" fill="${redColor}" />
+          <!-- 外周菊花リング -->
+          <circle cx="50" cy="50" r="44" fill="${redColor}" stroke="#991b1b" stroke-width="2" />
+          <circle cx="50" cy="50" r="39" fill="#ffffff" />
+          <!-- 緑の装飾花弁 -->
+          <circle cx="50" cy="50" r="33" fill="${greenColor}" stroke="#14532d" stroke-width="1.5" />
+          <circle cx="50" cy="50" r="23" fill="#ffffff" />
+          <!-- センターの真紅ジュエル -->
+          <circle cx="50" cy="50" r="16" fill="${redColor}" stroke="#7f1d1d" stroke-width="1.5" />
+          <circle cx="46" cy="46" r="4.5" fill="#ffffff" opacity="0.85" />
         </svg>
       </div>
     `;
   }
 
-  // 2〜9筒のドット配置
-  const dots = [];
+  // 2〜9筒のドット配置（外周リング＋内玉の本格彫り込み表現）
   const coords = {
     2: [{ x: 50, y: 28, c: blueColor }, { x: 50, y: 72, c: greenColor }],
     3: [{ x: 26, y: 26, c: blueColor }, { x: 50, y: 50, c: redColor }, { x: 74, y: 74, c: greenColor }],
     4: [{ x: 30, y: 30, c: blueColor }, { x: 70, y: 30, c: greenColor }, { x: 30, y: 70, c: greenColor }, { x: 70, y: 70, c: blueColor }],
     5: [{ x: 28, y: 28, c: blueColor }, { x: 72, y: 28, c: greenColor }, { x: 50, y: 50, c: redColor }, { x: 28, y: 72, c: greenColor }, { x: 72, y: 72, c: blueColor }],
-    6: [{ x: 32, y: 26, c: greenColor }, { x: 68, y: 26, c: greenColor }, { x: 32, y: 50, c: redColor }, { x: 68, y: 50, c: redColor }, { x: 32, y: 74, c: redColor }, { x: 68, y: 74, c: redColor }],
-    7: [{ x: 25, y: 22, c: greenColor }, { x: 50, y: 32, c: greenColor }, { x: 75, y: 42, c: greenColor }, { x: 32, y: 64, c: redColor }, { x: 68, y: 64, c: redColor }, { x: 32, y: 84, c: redColor }, { x: 68, y: 84, c: redColor }],
+    6: [{ x: 32, y: 25, c: greenColor }, { x: 68, y: 25, c: greenColor }, { x: 32, y: 50, c: redColor }, { x: 68, y: 50, c: redColor }, { x: 32, y: 75, c: redColor }, { x: 68, y: 75, c: redColor }],
+    7: [{ x: 25, y: 20, c: greenColor }, { x: 50, y: 30, c: greenColor }, { x: 75, y: 40, c: greenColor }, { x: 32, y: 64, c: redColor }, { x: 68, y: 64, c: redColor }, { x: 32, y: 84, c: redColor }, { x: 68, y: 84, c: redColor }],
     8: [{ x: 32, y: 20, c: blueColor }, { x: 68, y: 20, c: blueColor }, { x: 32, y: 40, c: blueColor }, { x: 68, y: 40, c: blueColor }, { x: 32, y: 60, c: blueColor }, { x: 68, y: 60, c: blueColor }, { x: 32, y: 80, c: blueColor }, { x: 68, y: 80, c: blueColor }],
     9: [{ x: 28, y: 24, c: blueColor }, { x: 50, y: 24, c: redColor }, { x: 72, y: 24, c: blueColor }, { x: 28, y: 50, c: blueColor }, { x: 50, y: 50, c: redColor }, { x: 72, y: 50, c: blueColor }, { x: 28, y: 76, c: blueColor }, { x: 50, y: 76, c: redColor }, { x: 72, y: 76, c: blueColor }]
   };
 
   const currentCoords = coords[num] || [];
-  const svgCircles = currentCoords.map(d => `<circle cx="${d.x}" cy="${d.y}" r="11" fill="${d.c}" stroke="rgba(0,0,0,0.15)" stroke-width="1.5" />`).join('');
+  const svgCircles = currentCoords.map(d => `
+    <g transform="translate(${d.x}, ${d.y})">
+      <!-- 外枠リング -->
+      <circle cx="0" cy="0" r="12" fill="none" stroke="${d.c}" stroke-width="2.8" />
+      <!-- 中心丸 -->
+      <circle cx="0" cy="0" r="7.5" fill="${d.c}" />
+      <!-- 光沢ハイライト -->
+      <circle cx="-2.5" cy="-2.5" r="2" fill="#ffffff" opacity="0.75" />
+    </g>
+  `).join('');
 
   return `
     <div class="pin-grid pin-${num}">
@@ -167,31 +186,54 @@ function renderPinGraphic(num, isRed) {
 }
 
 /**
- * 索子 (Sou) のバンブーパターンSVG
+ * 索子 (Sou) のバンブーパターンSVG（鮮明な竹節・極太ハイコントラスト）
  */
 function renderSouGraphic(num, isRed) {
-  const gColor = isRed ? '#dc2626' : '#16a34a';
+  const gColor = isRed ? '#dc2626' : '#15803d';
   const rColor = '#dc2626';
 
   if (num === 1) {
-    // 一索（孔雀・鳥）
+    // 一索（気品ある日本の孔雀・尾羽・止まり木デザイン）
     return `
-      <div class="sou-1-box">
+      <div class="sou-grid sou-1-box">
         <svg viewBox="0 0 100 100" class="sou-bird-svg">
-          <ellipse cx="50" cy="58" rx="22" ry="28" fill="${gColor}" />
-          <circle cx="50" cy="30" r="14" fill="${gColor}" />
-          <circle cx="45" cy="28" r="3" fill="#fff" />
-          <circle cx="45" cy="28" r="1.5" fill="#000" />
-          <polygon points="36,30 20,33 36,36" fill="#eab308" />
-          <path d="M 40,78 Q 50,96 60,78" stroke="${rColor}" stroke-width="4" fill="none" />
-          <circle cx="50" cy="56" r="8" fill="${rColor}" />
+          <!-- 扇状の尾羽 -->
+          <path d="M 50,60 C 22,46 12,24 26,12 C 36,4 45,28 50,56" fill="${gColor}" stroke="#14532d" stroke-width="1.2" />
+          <circle cx="25" cy="14" r="5" fill="${rColor}" />
+          <circle cx="25" cy="14" r="2" fill="#fef08a" />
+
+          <path d="M 50,60 C 35,34 30,14 44,7 C 53,4 53,28 50,56" fill="${gColor}" stroke="#14532d" stroke-width="1.2" />
+          <circle cx="44" cy="9" r="5" fill="${rColor}" />
+          <circle cx="44" cy="9" r="2" fill="#fef08a" />
+
+          <path d="M 50,60 C 65,34 70,14 56,7 C 47,4 47,28 50,56" fill="${gColor}" stroke="#14532d" stroke-width="1.2" />
+          <circle cx="56" cy="9" r="5" fill="${rColor}" />
+          <circle cx="56" cy="9" r="2" fill="#fef08a" />
+
+          <path d="M 50,60 C 78,46 88,24 74,12 C 64,4 55,28 50,56" fill="${gColor}" stroke="#14532d" stroke-width="1.2" />
+          <circle cx="75" cy="14" r="5" fill="${rColor}" />
+          <circle cx="75" cy="14" r="2" fill="#fef08a" />
+
+          <!-- 胴体と頭部 -->
+          <ellipse cx="50" cy="62" rx="15" ry="18" fill="${gColor}" stroke="#14532d" stroke-width="1.5" />
+          <path d="M 40,62 Q 50,76 60,62" fill="${rColor}" />
+          <circle cx="50" cy="40" r="10" fill="${gColor}" stroke="#14532d" stroke-width="1.5" />
+          <!-- 冠羽 -->
+          <path d="M 50,31 L 46,20 M 50,31 L 50,18 M 50,31 L 54,20" stroke="${rColor}" stroke-width="2.5" stroke-linecap="round" />
+          <!-- 目と嘴 -->
+          <circle cx="46" cy="38" r="3" fill="#ffffff" />
+          <circle cx="45.5" cy="38" r="1.5" fill="#000000" />
+          <polygon points="41,40 30,42 41,44" fill="#eab308" stroke="#ca8a04" stroke-width="1" />
+          <!-- 止まり木 -->
+          <rect x="25" y="82" width="50" height="7" rx="3.5" fill="#ca8a04" stroke="#a16207" stroke-width="1" />
+          <line x1="44" y1="78" x2="42" y2="83" stroke="#a16207" stroke-width="2" stroke-linecap="round" />
+          <line x1="56" y1="78" x2="58" y2="83" stroke="#a16207" stroke-width="2" stroke-linecap="round" />
         </svg>
       </div>
     `;
   }
 
   // 2〜9索の竹スティック
-  const sticks = [];
   const stickMap = {
     2: [{ x: 50, y: 26, c: gColor }, { x: 50, y: 74, c: gColor }],
     3: [{ x: 50, y: 24, c: gColor }, { x: 30, y: 72, c: gColor }, { x: 70, y: 72, c: gColor }],
@@ -206,8 +248,12 @@ function renderSouGraphic(num, isRed) {
   const list = stickMap[num] || [];
   const stickElements = list.map(s => `
     <g transform="translate(${s.x}, ${s.y})">
-      <rect x="-4" y="-12" width="8" height="24" rx="3" fill="${s.c}" stroke="rgba(0,0,0,0.2)" stroke-width="1"/>
-      <line x1="-3" y1="0" x2="3" y2="0" stroke="#fff" stroke-width="1.5" opacity="0.6"/>
+      <!-- 竹の幹（厚みと丸みのあるバー） -->
+      <rect x="-5" y="-13" width="10" height="26" rx="3.5" fill="${s.c}" stroke="rgba(0,0,0,0.3)" stroke-width="1.2"/>
+      <!-- 竹の節（白帯とインデント） -->
+      <rect x="-6" y="-2.5" width="12" height="5" rx="1.5" fill="#ffffff" opacity="0.95" stroke="rgba(0,0,0,0.2)" stroke-width="0.8"/>
+      <!-- 節の中央ライン -->
+      <line x1="-4" y1="0" x2="4" y2="0" stroke="${s.c}" stroke-width="1.2"/>
     </g>
   `).join('');
 
@@ -218,6 +264,7 @@ function renderSouGraphic(num, isRed) {
       </svg>
     </div>
   `;
+}
 }
 
 // Global expose
