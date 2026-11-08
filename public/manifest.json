@@ -1,0 +1,18 @@
+{
+  "name": "雀聖AI - 麻雀点数計算・待ち牌ナビ・OCRカメラ",
+  "short_name": "雀聖AI",
+  "description": "麻雀の点数計算、待ち牌・残り枚数・シャンテン数判定、スマホカメラ手牌OCR認識",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#042f24",
+  "theme_color": "#064e3b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23064e3b'/><text x='50' y='65' font-size='50' text-anchor='middle'>🀄️</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
+

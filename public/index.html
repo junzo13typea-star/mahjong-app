@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>雀聖AI - 麻雀点数計算・待ち牌ナビ・OCRカメラ認識</title>
+  <meta name="description" content="麻雀の点数計算、待ち牌・残り枚数・シャンテン数判定、スマホカメラによる手牌OCR認識をワンストップで実現する本格麻雀ツール">
+  <meta name="theme-color" content="#064e3b">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Zen+Old+Mincho:wght@700;900&display=swap" rel="stylesheet">
+</head>
+<body class="mat-theme">
+  <div class="app-container">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-icon">🀄️</span>
+        <div class="brand-text">
+          <h1 class="brand-title">雀聖AI <span class="brand-sub">Mahjong Master Pro</span></h1>
+          <p class="brand-desc">点数計算 • 待ち牌・向聴ナビ • 手牌OCRカメラ</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnQuickSample" class="btn-ghost" title="サンプル牌姿を入力">🎲 サンプル</button>
+        <button id="btnClearHand" class="btn-ghost btn-danger-ghost" title="手牌をリセット">🗑️ 全消去</button>
+      </div>
+    </header>
+
+    <!-- モード切り替えタブ -->
+    <nav class="mode-nav">
+      <button class="nav-tab active" data-tab="score">
+        <span class="tab-icon">🧮</span>
+        <span class="tab-label">点数計算</span>
+      </button>
+      <button class="nav-tab" data-tab="wait">
+        <span class="tab-icon">🎯</span>
+        <span class="tab-label">待ち牌・向聴</span>
+      </button>
+      <button class="nav-tab" data-tab="ocr">
+        <span class="tab-icon">📷</span>
+        <span class="tab-label">OCRカメラ認識</span>
+      </button>
+      <button class="nav-tab" data-tab="reference">
+        <span class="tab-icon">📜</span>
+        <span class="tab-label">点数早見表</span>
+      </button>
+    </nav>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+
+      <!-- ================= 共通: 現在の手牌トレイ ================= -->
+      <section class="hand-section table-mat">
+        <div class="section-header">
+          <div class="hand-info-badge">
+            <span class="label">手牌</span>
+            <span id="handCountBadge" class="count-badge">0 / 14枚</span>
+            <span id="shantenQuickBadge" class="shanten-badge">-</span>
+          </div>
+          <div class="hand-controls">
+            <button id="btnSortHand" class="btn-sm btn-mat" title="理牌（ソート）">🔄 理牌</button>
+            <button id="btnRemoveLast" class="btn-sm btn-mat" title="最後の1枚を消す">⬅ 1枚消去</button>
+          </div>
+        </div>
+
+        <!-- 牌表示トレイ -->
+        <div class="tile-tray-container">
+          <div id="handTilesContainer" class="tile-tray">
+            <!-- 手牌タイルがここに並ぶ -->
+            <div class="empty-tray-msg">下の牌パレットをタップして手牌を入力してください</div>
+          </div>
+          <!-- アガリ牌（和了牌）指定エリア -->
+          <div class="winning-tile-wrapper" id="winningTileWrapper">
+            <div class="win-tile-label">和了牌</div>
+            <div id="winTileSlot" class="tile-slot" title="クリックでアガリ牌を指定/解除">
+              <span class="slot-placeholder">？</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 副露（鳴き牌）表示トレイ -->
+        <div id="meldsArea" class="melds-tray-container hidden">
+          <div class="melds-header">
+            <span class="melds-title">副露 (鳴き)</span>
+            <button id="btnAddMeldModal" class="btn-xs btn-outline">＋ 鳴きを追加</button>
+          </div>
+          <div id="meldsList" class="melds-list"></div>
+        </div>
+      </section>
+
+      <!-- ================= タブ1: 点数計算パネル ================= -->
+      <section id="tab-score" class="tab-panel active">
+        <!-- 状況設定オプション -->
+        <div class="calc-options-card">
+          <div class="options-grid">
+            <!-- 和了条件 (親/子, ツモ/ロン) -->
+            <div class="option-group">
+              <label class="group-label">和了種別</label>
+              <div class="segmented-control" id="ctrlDealer">
+                <button class="seg-btn" data-value="false">子 (30符〜)</button>
+                <button class="seg-btn active" data-value="true">親 (東家 1.5倍)</button>
+              </div>
+            </div>
+
+            <div class="option-group">
+              <label class="group-label">和了方法</label>
+              <div class="segmented-control" id="ctrlTsumo">
+                <button class="seg-btn active" data-value="true">ツモ (自摸)</button>
+                <button class="seg-btn" data-value="false">ロン (栄和)</button>
+              </div>
+            </div>
+
+            <!-- 風 (場風・自風) -->
+            <div class="option-group">
+              <label class="group-label">場風 / 自風</label>
+              <div class="wind-selectors">
+                <div class="select-wrapper">
+                  <span class="select-label">場:</span>
+                  <select id="selectBakaze" class="form-select">
+                    <option value="1z">東場 (トン)</option>
+                    <option value="2z">南場 (ナン)</option>
+                  </select>
+                </div>
+                <div class="select-wrapper">
+                  <span class="select-label">自:</span>
+                  <select id="selectJikaze" class="form-select">
+                    <option value="1z">東家 (親)</option>
+                    <option value="2z">南家</option>
+                    <option value="3z">西家</option>
+                    <option value="4z">北家</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 本場 & 供託 -->
+            <div class="option-group">
+              <label class="group-label">本場 / 供託</label>
+              <div class="number-steppers">
+                <div class="stepper-wrap">
+                  <span class="stepper-label">本場:</span>
+                  <input type="number" id="inputHonba" class="form-input num-input" min="0" max="99" value="0">
+                  <span class="stepper-unit">本</span>
+                </div>
+                <div class="stepper-wrap">
+                  <span class="stepper-label">供託:</span>
+                  <input type="number" id="inputKyotaku" class="form-input num-input" min="0" max="99" value="0">
+                  <span class="stepper-unit">本</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ドラ指定 & 役フラグ -->
+          <div class="dora-and-flags-row">
+            <!-- ドラ表示牌 -->
+            <div class="dora-section">
+              <div class="dora-box">
+                <span class="dora-title">ドラ表示牌:</span>
+                <div id="doraTilesContainer" class="dora-tiles-row">
+                  <div class="dora-slot empty" data-type="dora" data-index="0">＋</div>
+                  <div class="dora-slot empty" data-type="dora" data-index="1">＋</div>
+                  <div class="dora-slot empty" data-type="dora" data-index="2">＋</div>
+                  <div class="dora-slot empty" data-type="dora" data-index="3">＋</div>
+                  <div class="dora-slot empty" data-type="dora" data-index="4">＋</div>
+                </div>
+              </div>
+              <div class="dora-box ura-dora-box">
+                <span class="dora-title">裏ドラ表示牌:</span>
+                <div id="uraDoraTilesContainer" class="dora-tiles-row">
+                  <div class="dora-slot empty" data-type="uradora" data-index="0">＋</div>
+                  <div class="dora-slot empty" data-type="uradora" data-index="1">＋</div>
+                  <div class="dora-slot empty" data-type="uradora" data-index="2">＋</div>
+                  <div class="dora-slot empty" data-type="uradora" data-index="3">＋</div>
+                  <div class="dora-slot empty" data-type="uradora" data-index="4">＋</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 役チェックボックス群 -->
+            <div class="yaku-flags-section">
+              <span class="dora-title">状況役 (クリックでON/OFF):</span>
+              <div class="flags-chips">
+                <label class="flag-chip"><input type="checkbox" id="chkRiichi"><span>立直 (リーチ)</span></label>
+                <label class="flag-chip"><input type="checkbox" id="chkDoubleRiichi"><span>Wリーチ</span></label>
+                <label class="flag-chip"><input type="checkbox" id="chkIppatsu"><span>一発</span></label>
+                <label class="flag-chip"><input type="checkbox" id="chkHaitei"><span>海底摸月</span></label>
+                <label class="flag-chip"><input type="checkbox" id="chkHoutei"><span>河底撈魚</span></label>
+                <label class="flag-chip"><input type="checkbox" id="chkRinshan"><span>嶺上開花</span></label>
+                <label class="flag-chip"><input type="checkbox" id="chkChankan"><span>槍槓</span></label>
+                <label class="flag-chip"><input type="checkbox" id="chkTenhou"><span>天和</span></label>
+                <label class="flag-chip"><input type="checkbox" id="chkChiihou"><span>地和</span></label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 計算ボタン -->
+          <div class="action-btn-row">
+            <button id="btnCalculateScore" class="btn-primary btn-large">
+              <span class="btn-text">🧮 点数を計算する</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 点数計算結果カード -->
+        <div id="scoreResultContainer" class="score-result-card hidden">
+          <!-- 点数サマリー -->
+          <div class="score-main-display">
+            <div class="score-rank" id="resScoreRank">満貫</div>
+            <div class="score-points" id="resScorePoints">12,000 <span class="pts-unit">点</span></div>
+            <div class="score-sub" id="resScorePayment">（子：4,000オール）</div>
+          </div>
+
+          <!-- 翻数・符数バッジ -->
+          <div class="score-meta-row">
+            <div class="meta-pill" id="resHanFu">4翻 40符</div>
+            <div class="meta-pill bonus-pill" id="resHonbaDesc">本場加算: 0点</div>
+            <div class="meta-pill deposit-pill" id="resKyotakuDesc">供託: 0点</div>
+          </div>
+
+          <!-- 成立役一覧 -->
+          <div class="result-details-section">
+            <h3 class="detail-heading">成立役一覧</h3>
+            <div id="resYakuList" class="yaku-list-grid"></div>
+          </div>
+
+          <!-- 符の内訳詳細 -->
+          <div class="result-details-section" id="fuDetailBlock">
+            <h3 class="detail-heading">符計算の内訳 (<span id="resTotalFuCalc">40符</span>)</h3>
+            <div id="resFuList" class="fu-breakdown-list"></div>
+          </div>
+
+          <!-- 面子構成の分解 -->
+          <div class="result-details-section">
+            <h3 class="detail-heading">最高得点の面子構成</h3>
+            <div id="resDecompDisplay" class="decomp-tiles-container"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= タブ2: 待ち牌・シャンテン数ナビ ================= -->
+      <section id="tab-wait" class="tab-panel">
+        <div class="wait-nav-card">
+          <div class="wait-header-banner">
+            <div class="shanten-status">
+              <span class="status-label">現在の状態:</span>
+              <span id="shantenStatusText" class="status-value">聴牌 (テンパイ)</span>
+            </div>
+            <div id="waitSummaryBadge" class="wait-summary">待ち: 計 8 枚 (2種)</div>
+          </div>
+
+          <!-- テンパイ時の待ち牌一覧表示エリア -->
+          <div id="tenpaiWaitsSection" class="tenpai-section">
+            <h3 class="wait-section-title">🎯 待ち牌一覧 & 残り枚数</h3>
+            <div id="waitTilesGrid" class="wait-tiles-grid">
+              <!-- 各待ち牌カード（牌画像、残り枚数、待ち形状）がここに入る -->
+            </div>
+            <div class="wait-shape-explanation" id="waitShapeExplanation">
+              <div class="shape-tag" id="waitShapeTag">両面待ち</div>
+              <p class="shape-desc" id="waitShapeDesc">両面待ち（リャンメン）は最もアガリやすい基本の待ちです。</p>
+            </div>
+          </div>
+
+          <!-- ノーテン時・打牌選択アシストエリア (14枚時) -->
+          <div id="discardAssistSection" class="discard-assist-section hidden">
+            <h3 class="wait-section-title">💡 何を切る？（打牌候補とシャンテン数変化）</h3>
+            <p class="assist-note">手牌から1枚切った時の待ち・受け入れ枚数をシミュレーションします。</p>
+            <div id="discardCandidatesGrid" class="discard-candidates-grid"></div>
+          </div>
+
+          <!-- 牌効率・向聴数解説 -->
+          <div class="shanten-breakdown-card">
+            <h3 class="card-subhead">📊 手牌構造の解析</h3>
+            <div class="breakdown-grid">
+              <div class="stat-box">
+                <span class="stat-num" id="statGeneralShanten">0</span>
+                <span class="stat-name">一般手 向聴数</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-num" id="statChitoiShanten">2</span>
+                <span class="stat-name">七対子 向聴数</span>
+              </div>
+              <div class="stat-box">
+                <span class="stat-num" id="statKokushiShanten">8</span>
+                <span class="stat-name">国士無双 向聴数</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= タブ3: OCRカメラ点数計算 ================= -->
+      <section id="tab-ocr" class="tab-panel">
+        <div class="ocr-card">
+          <div class="ocr-instructions">
+            <h3 class="ocr-step-title">📷 スマホカメラで手牌を撮影・自動認識</h3>
+            <p class="ocr-step-desc">牌を横一列に並べて、枠線内に収まるように撮影してください。影が少なく明るい場所で撮影すると認識精度が上がります。</p>
+          </div>
+
+          <!-- カメラプレビュー / ガイド枠 -->
+          <div class="camera-viewport-wrap">
+            <video id="cameraVideo" playsinline autoplay muted class="camera-video hidden"></video>
+            <canvas id="ocrCanvas" class="ocr-canvas hidden"></canvas>
+
+            <div id="cameraOverlay" class="camera-overlay">
+              <div class="guide-frame">
+                <div class="guide-corners top-left"></div>
+                <div class="guide-corners top-right"></div>
+                <div class="guide-corners bottom-left"></div>
+                <div class="guide-corners bottom-right"></div>
+                <div class="guide-line"></div>
+                <span class="guide-text">ここに手牌14枚を水平に並べてください</span>
+              </div>
+            </div>
+
+            <!-- カメラ未起動時のプレースホルダー -->
+            <div id="cameraPlaceholder" class="camera-placeholder">
+              <div class="placeholder-icon">📷</div>
+              <p>カメラを起動するか、撮影済み画像をアップロードしてください</p>
+              <div class="ocr-buttons-row">
+                <button id="btnStartCamera" class="btn-primary">
+                  <span>📹 カメラを起動</span>
+                </button>
+                <label class="btn-outline file-upload-btn">
+                  <span>📁 画像を選択</span>
+                  <input type="file" id="fileInputOcr" accept="image/*" class="file-hidden">
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- カメラ操作コントロール（起動時） -->
+          <div id="cameraControls" class="camera-controls hidden">
+            <button id="btnCapturePhoto" class="btn-capture" title="撮影して解析">
+              <div class="shutter-inner"></div>
+            </button>
+            <button id="btnStopCamera" class="btn-sm btn-mat">停止</button>
+          </div>
+
+          <!-- 認識結果プレビュー＆手動修正エリア -->
+          <div id="ocrResultCard" class="ocr-result-card hidden">
+            <div class="ocr-result-header">
+              <span class="result-badge">✨ 解析結果</span>
+              <span class="hint-text">誤認識がある場合は牌をタップして修正できます</span>
+            </div>
+
+            <div id="ocrDetectedTiles" class="ocr-tiles-preview"></div>
+
+            <div class="ocr-confirm-actions">
+              <button id="btnApplyOcrToHand" class="btn-primary">
+                <span>✅ この手牌で点数計算へ</span>
+              </button>
+              <button id="btnApplyOcrToWait" class="btn-secondary">
+                <span>🎯 待ち牌ナビへ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= タブ4: 点数早見表 & ルールリファレンス ================= -->
+      <section id="tab-reference" class="tab-panel">
+        <div class="ref-card">
+          <h2 class="ref-heading">🀄️ 麻雀点数早見表</h2>
+          <div class="table-toggle-wrap">
+            <button class="seg-btn active" id="btnShowKoTable">子（ロン / ツモ）</button>
+            <button class="seg-btn" id="btnShowOyaTable">親（ロン / ツモ）</button>
+          </div>
+
+          <!-- 子の点数表 -->
+          <div id="tableKoWrap" class="table-responsive">
+            <table class="ref-table">
+              <thead>
+                <tr>
+                  <th>符＼翻</th>
+                  <th>1翻 (ロン/ツモ)</th>
+                  <th>2翻 (ロン/ツモ)</th>
+                  <th>3翻 (ロン/ツモ)</th>
+                  <th>4翻 (ロン/ツモ)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>20符 (平和ツモ)</td>
+                  <td>-</td>
+                  <td>-</td>
+                  <td>2,700 (700/1,300)</td>
+                  <td>5,200 (1,300/2,600)</td>
+                </tr>
+                <tr>
+                  <td>25符 (七対子)</td>
+                  <td>-</td>
+                  <td>1,600 (-)</td>
+                  <td>3,200 (800/1,600)</td>
+                  <td>6,400 (1,600/3,200)</td>
+                </tr>
+                <tr>
+                  <td>30符 (基本)</td>
+                  <td>1,000 (300/500)</td>
+                  <td>2,000 (500/1,000)</td>
+                  <td>3,900 (1,000/2,000)</td>
+                  <td>7,700 (2,000/3,900)</td>
+                </tr>
+                <tr>
+                  <td>40符</td>
+                  <td>1,300 (400/700)</td>
+                  <td>2,600 (700/1,300)</td>
+                  <td>5,200 (1,300/2,600)</td>
+                  <td>満貫 8,000 (2,000/4,000)</td>
+                </tr>
+                <tr>
+                  <td>50符</td>
+                  <td>1,600 (400/800)</td>
+                  <td>3,200 (800/1,600)</td>
+                  <td>6,400 (1,600/3,200)</td>
+                  <td>満貫 8,000</td>
+                </tr>
+                <tr>
+                  <td>60符</td>
+                  <td>2,000 (500/1,000)</td>
+                  <td>3,900 (1,000/2,000)</td>
+                  <td>7,700 (2,000/3,900)</td>
+                  <td>満貫 8,000</td>
+                </tr>
+                <tr>
+                  <td>70符</td>
+                  <td>2,300 (600/1,200)</td>
+                  <td>4,500 (1,200/2,300)</td>
+                  <td>満貫 8,000</td>
+                  <td>満貫 8,000</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 親の点数表 -->
+          <div id="tableOyaWrap" class="table-responsive hidden">
+            <table class="ref-table">
+              <thead>
+                <tr>
+                  <th>符＼翻</th>
+                  <th>1翻 (ロン/ツモ)</th>
+                  <th>2翻 (ロン/ツモ)</th>
+                  <th>3翻 (ロン/ツモ)</th>
+                  <th>4翻 (ロン/ツモ)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>20符 (平和ツモ)</td>
+                  <td>-</td>
+                  <td>-</td>
+                  <td>4,000 (1,300 ALL)</td>
+                  <td>7,700 (2,600 ALL)</td>
+                </tr>
+                <tr>
+                  <td>25符 (七対子)</td>
+                  <td>-</td>
+                  <td>2,400 (-)</td>
+                  <td>4,800 (1,600 ALL)</td>
+                  <td>9,600 (3,200 ALL)</td>
+                </tr>
+                <tr>
+                  <td>30符 (基本)</td>
+                  <td>1,500 (500 ALL)</td>
+                  <td>2,900 (1,000 ALL)</td>
+                  <td>5,800 (2,000 ALL)</td>
+                  <td>11,600 (3,900 ALL)</td>
+                </tr>
+                <tr>
+                  <td>40符</td>
+                  <td>2,000 (700 ALL)</td>
+                  <td>3,900 (1,300 ALL)</td>
+                  <td>7,700 (2,600 ALL)</td>
+                  <td>満貫 12,000 (4,000 ALL)</td>
+                </tr>
+                <tr>
+                  <td>50符</td>
+                  <td>2,400 (800 ALL)</td>
+                  <td>4,800 (1,600 ALL)</td>
+                  <td>9,600 (3,200 ALL)</td>
+                  <td>満貫 12,000</td>
+                </tr>
+                <tr>
+                  <td>60符</td>
+                  <td>2,900 (1,000 ALL)</td>
+                  <td>5,800 (2,000 ALL)</td>
+                  <td>11,600 (3,900 ALL)</td>
+                  <td>満貫 12,000</td>
+                </tr>
+                <tr>
+                  <td>70符</td>
+                  <td>3,400 (1,200 ALL)</td>
+                  <td>6,800 (2,300 ALL)</td>
+                  <td>満貫 12,000</td>
+                  <td>満貫 12,000</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 高翻の点数表 -->
+          <h3 class="ref-subheading">5翻以上の高得点（固定点）</h3>
+          <div class="table-responsive">
+            <table class="ref-table">
+              <thead>
+                <tr>
+                  <th>区分</th>
+                  <th>翻数</th>
+                  <th>子 (ロン / ツモ)</th>
+                  <th>親 (ロン / ツモ)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>満貫</strong></td>
+                  <td>5翻 (または4翻40符以上)</td>
+                  <td>8,000 (2,000/4,000)</td>
+                  <td>12,000 (4,000 ALL)</td>
+                </tr>
+                <tr>
+                  <td><strong>跳満</strong></td>
+                  <td>6〜7翻</td>
+                  <td>12,000 (3,000/6,000)</td>
+                  <td>18,000 (6,000 ALL)</td>
+                </tr>
+                <tr>
+                  <td><strong>倍満</strong></td>
+                  <td>8〜10翻</td>
+                  <td>16,000 (4,000/8,000)</td>
+                  <td>24,000 (8,000 ALL)</td>
+                </tr>
+                <tr>
+                  <td><strong>三倍満</strong></td>
+                  <td>11〜12翻</td>
+                  <td>24,000 (6,000/12,000)</td>
+                  <td>36,000 (12,000 ALL)</td>
+                </tr>
+                <tr>
+                  <td><strong>役満</strong></td>
+                  <td>13翻以上 / 役満役</td>
+                  <td>32,000 (8,000/16,000)</td>
+                  <td>48,000 (16,000 ALL)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 画面下部固定: 牌パレット入力エリア ================= -->
+      <section class="palette-dock">
+        <div class="palette-tabs">
+          <button class="palette-tab active" data-suit="m">萬子 (マンズ)</button>
+          <button class="palette-tab" data-suit="p">筒子 (ピンズ)</button>
+          <button class="palette-tab" data-suit="s">索子 (ソーズ)</button>
+          <button class="palette-tab" data-suit="z">字牌 (ジハイ)</button>
+        </div>
+
+        <div class="palette-tiles-viewport">
+          <div id="paletteTilesContainer" class="palette-tiles-grid">
+            <!-- 選択された種類の牌ボタンが並ぶ -->
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 副露（鳴き）入力モーダル -->
+    <div id="meldModal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 class="modal-title">鳴き（副露）の追加</h3>
+          <button id="btnCloseMeldModal" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="meld-type-selector">
+            <button class="seg-btn active" data-meld-type="chi">チー (順子)</button>
+            <button class="seg-btn" data-meld-type="pon">ポン (刻子)</button>
+            <button class="seg-btn" data-meld-type="kan">カン (明槓)</button>
+            <button class="seg-btn" data-meld-type="ankan">暗槓 (アンカン)</button>
+          </div>
+          <div class="meld-picker-prompt">
+            <p id="meldPromptText">牌をタップして副露する面子を選択してください (3枚)</p>
+          </div>
+          <div id="meldStagingTiles" class="meld-staging-row"></div>
+          <div id="meldPickerPalette" class="palette-tiles-grid mini-palette"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnCancelMeld" class="btn-outline">キャンセル</button>
+          <button id="btnConfirmMeld" class="btn-primary" disabled>決定</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- スクリプト群 -->
+  <script src="js/tiles.js"></script>
+  <script src="js/shanten.js"></script>
+  <script src="js/score.js"></script>
+  <script src="js/ocr.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(err => console.log('SW reg error:', err));
+      });
+    }
+  </script>
+</body>
+</html>
