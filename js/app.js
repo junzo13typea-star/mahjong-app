@@ -294,8 +294,19 @@
       p.classList.toggle('active', p.id === `tab-${tabId}`);
     });
 
+    // CPU対局タブの場合は、通常の手牌トレイ・牌パレットを非表示にし、対局ゲーム専用画面を表示
+    const isGame = (tabId === 'game');
+    const handSec = document.querySelector('.hand-section');
+    const paletteDock = document.querySelector('.palette-dock');
+    if (handSec) handSec.style.display = isGame ? 'none' : '';
+    if (paletteDock) paletteDock.style.display = isGame ? 'none' : '';
+
     if (tabId === 'wait') {
       updateShantenDisplay();
+    } else if (isGame && window.MahjongGame) {
+      if (!window.MahjongGame.isInitialized) {
+        window.MahjongGame.init();
+      }
     }
   }
 

@@ -39,6 +39,10 @@
         <span class="tab-icon">🎯</span>
         <span class="tab-label">待ち牌・向聴</span>
       </button>
+      <button class="nav-tab" data-tab="game">
+        <span class="tab-icon">🀄️</span>
+        <span class="tab-label">CPU対局</span>
+      </button>
       <button class="nav-tab" data-tab="ocr">
         <span class="tab-icon">📷</span>
         <span class="tab-label">OCRカメラ認識</span>
@@ -551,6 +555,157 @@
         </div>
       </section>
 
+      <!-- ================= タブ5: 本格4人CPU対局ゲーム ================= -->
+      <section id="tab-game" class="tab-panel">
+        <!-- 雀卓ヘッダー / ゲームコントロール -->
+        <div class="game-control-bar">
+          <div class="game-status-pill">
+            <span id="gameRoundName" class="round-name">東1局</span>
+            <span id="gameHonbaBadge" class="honba-badge">0本場</span>
+            <span id="gameRiichiSticks" class="riichi-badge">供託: 0点</span>
+          </div>
+          <div class="game-wall-counter">
+            <span class="wall-icon">🀄️</span>
+            <span>残牌: <strong id="gameRemainingWall">70</strong>枚</span>
+          </div>
+          <div class="game-actions-quick">
+            <button id="btnNewGame" class="btn-ghost" title="対局を最初からやり直す">🔄 新規対局</button>
+            <button id="btnToggleAssist" class="btn-ghost" title="待ち牌・シャンテン数アシスト表示の切替">💡 アシスト: ON</button>
+          </div>
+        </div>
+
+        <!-- 本格麻雀卓（グリーンフェルト調マット） -->
+        <div class="mahjong-table-mat">
+          <!-- 対面 (CPU 2 - レン) -->
+          <div class="table-seat seat-toimen">
+            <div class="player-info-card">
+              <span class="player-avatar">🧑‍💻</span>
+              <div class="player-details">
+                <div class="player-name-row">
+                  <span class="player-name">CPU レン</span>
+                  <span class="player-kaze kaze-toimen">北</span>
+                </div>
+                <div class="player-score-row">
+                  <span class="player-points" id="scoreToimen">25,000</span>
+                  <span class="riichi-flag" id="riichiFlagToimen" style="display:none;">🚩立直</span>
+                </div>
+              </div>
+            </div>
+            <!-- 対面の手牌（伏せ牌） -->
+            <div class="enemy-hand-wrap" id="handToimen"></div>
+            <div class="enemy-melds-wrap" id="meldsToimen"></div>
+          </div>
+
+          <!-- 中間行：上家、卓中央（河・ドラ・局情報）、下家 -->
+          <div class="table-middle-row">
+            <!-- 上家 (CPU 3 - 龍馬) -->
+            <div class="table-seat seat-kamicha">
+              <div class="player-info-card vertical">
+                <span class="player-avatar">🧓</span>
+                <div class="player-details">
+                  <span class="player-name">CPU 龍馬</span>
+                  <span class="player-kaze kaze-kamicha">西</span>
+                  <span class="player-points" id="scoreKamicha">25,000</span>
+                  <span class="riichi-flag" id="riichiFlagKamicha" style="display:none;">🚩立直</span>
+                </div>
+              </div>
+              <div class="enemy-hand-wrap vertical" id="handKamicha"></div>
+              <div class="enemy-melds-wrap" id="meldsKamicha"></div>
+            </div>
+
+            <!-- 卓中央（ドラ表示牌・河4方向） -->
+            <div class="table-center-board">
+              <div class="kawa-board">
+                <!-- 対面の河 -->
+                <div class="kawa-row kawa-toimen" id="kawaToimen"></div>
+
+                <div class="kawa-middle-container">
+                  <!-- 上家の河 -->
+                  <div class="kawa-col kawa-kamicha" id="kawaKamicha"></div>
+
+                  <!-- 卓中央（ドラ・局名・手番） -->
+                  <div class="center-dora-display">
+                    <div class="center-round-text" id="centerRoundText">東1局</div>
+                    <div class="dora-indicator-wrap">
+                      <span class="dora-title">ドラ表示</span>
+                      <div id="gameDoraTile" class="game-dora-slot"></div>
+                    </div>
+                    <div class="turn-indicator" id="turnIndicator">あなたの手番</div>
+                  </div>
+
+                  <!-- 下家の河 -->
+                  <div class="kawa-col kawa-shimocha" id="kawaShimocha"></div>
+                </div>
+
+                <!-- 自分の河 -->
+                <div class="kawa-row kawa-jibun" id="kawaJibun"></div>
+              </div>
+            </div>
+
+            <!-- 下家 (CPU 1 - 葵) -->
+            <div class="table-seat seat-shimocha">
+              <div class="player-info-card vertical">
+                <span class="player-avatar">👩‍💼</span>
+                <div class="player-details">
+                  <span class="player-name">CPU 葵</span>
+                  <span class="player-kaze kaze-shimocha">南</span>
+                  <span class="player-points" id="scoreShimocha">25,000</span>
+                  <span class="riichi-flag" id="riichiFlagShimocha" style="display:none;">🚩立直</span>
+                </div>
+              </div>
+              <div class="enemy-hand-wrap vertical" id="handShimocha"></div>
+              <div class="enemy-melds-wrap" id="meldsShimocha"></div>
+            </div>
+          </div>
+
+          <!-- プレイヤー（自分）の領域 -->
+          <div class="table-seat seat-jibun">
+            <!-- アクションボタンバー（ロン・ツモ・リーチ・ポン・チー・カン・パス） -->
+            <div class="game-action-bar" id="gameActionBar" style="display: none;">
+              <button id="btnActionRon" class="btn-game-act btn-act-ron" style="display:none;">ロン！</button>
+              <button id="btnActionTsumo" class="btn-game-act btn-act-tsumo" style="display:none;">ツモ！</button>
+              <button id="btnActionRiichi" class="btn-game-act btn-act-riichi" style="display:none;">リーチ</button>
+              <button id="btnActionPon" class="btn-game-act btn-act-pon" style="display:none;">ポン</button>
+              <button id="btnActionChi" class="btn-game-act btn-act-chi" style="display:none;">チー</button>
+              <button id="btnActionKan" class="btn-game-act btn-act-kan" style="display:none;">カン</button>
+              <button id="btnActionPass" class="btn-game-act btn-act-pass">パス</button>
+            </div>
+
+            <!-- 初心者向けアシストバー -->
+            <div class="game-assist-bar" id="gameAssistBar">
+              <span class="assist-badge" id="gameAssistShanten">向聴数: 計算中...</span>
+              <span class="assist-waits" id="gameAssistWaits">手牌をタップして打牌してください</span>
+            </div>
+
+            <div class="jibun-hand-container">
+              <!-- 自分の情報 -->
+              <div class="player-info-card horizontal">
+                <span class="player-avatar">🧑</span>
+                <div class="player-details">
+                  <div class="player-name-row">
+                    <span class="player-name">あなた</span>
+                    <span class="player-kaze kaze-jibun">東</span>
+                    <span class="riichi-flag" id="riichiFlagJibun" style="display:none;">🚩立直</span>
+                  </div>
+                  <div class="player-score-row">
+                    <span class="player-points" id="scoreJibun">25,000</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 自分の手牌（13枚 + ツモ牌） -->
+              <div class="jibun-tiles-row">
+                <div class="hand-tiles-group" id="jibunHandTiles"></div>
+                <div class="tsumo-tile-group" id="jibunTsumoTile"></div>
+              </div>
+
+              <!-- 自分の副露（鳴き牌） -->
+              <div class="jibun-melds-group" id="jibunMelds"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ================= 画面下部固定: 牌パレット入力エリア ================= -->
       <section class="palette-dock">
         <div class="palette-tabs">
@@ -596,6 +751,52 @@
       </div>
     </div>
 
+    <!-- 対局結果（和了・流局）モーダル -->
+    <div id="gameResultModal" class="modal-overlay hidden">
+      <div class="modal-card game-result-card">
+        <div class="modal-header">
+          <h3 id="resultModalTitle" class="modal-title">🀄️ 和了（アガリ）！</h3>
+        </div>
+        <div class="modal-body">
+          <div class="result-winner-banner">
+            <span id="resultWinnerAvatar" class="winner-avatar">🧑</span>
+            <div class="winner-meta">
+              <h4 id="resultWinnerName" class="winner-name">あなた</h4>
+              <p id="resultAgariType" class="agari-type">門前清自摸和</p>
+            </div>
+          </div>
+
+          <!-- 和了手牌 -->
+          <div class="result-hand-section">
+            <div class="result-label">和了手牌</div>
+            <div id="resultHandTiles" class="result-tiles-row"></div>
+          </div>
+
+          <!-- ドラ表示牌 -->
+          <div class="result-dora-section">
+            <div class="result-label">ドラ表示牌</div>
+            <div id="resultDoraTiles" class="result-dora-row"></div>
+          </div>
+
+          <!-- 役リスト -->
+          <div class="result-yaku-section">
+            <div class="result-label">成立役</div>
+            <ul id="resultYakuList" class="result-yaku-list"></ul>
+          </div>
+
+          <!-- 得点表示 -->
+          <div class="result-score-box">
+            <div id="resultScoreRank" class="score-rank-badge">満貫</div>
+            <div id="resultScorePoints" class="result-score-main">8,000 点</div>
+            <div id="resultScoreDetails" class="score-sub-details">4翻 40符</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnNextRound" class="btn-primary btn-lg" style="width: 100%;">次の局へ進む ➔</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- スクリプト群 -->
@@ -603,6 +804,7 @@
   <script src="js/shanten.js"></script>
   <script src="js/score.js"></script>
   <script src="js/ocr.js"></script>
+  <script src="js/game.js"></script>
   <script src="js/app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
