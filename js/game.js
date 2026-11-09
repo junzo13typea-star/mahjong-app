@@ -978,16 +978,45 @@
       discardTile = drawnTile;
       isTsumogiri = true;
     } else {
-      discardTile = chooseCpuBestDiscard(fullHand, cpu.melds.length, cpu.kuikaeForbidden);
+      discardTile = chooseCpuBestDiscard(fullHand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx);
       isTsumogiri = (discardTile === drawnTile);
     }
 
     handleDiscardTile(playerIdx, discardTile, isTsumogiri);
   }
 
-  function chooseCpuBestDiscard(hand14, meldCount, forbiddenTiles) {
+  // ============ CPUの押し引き (リーチへの守備) ============
+  // 指定した相手に対する牌の危険度 (0=絶対安全 〜 1=最も危険)。
+  // 現物=0、スジで両面を消す、字牌は場の見え枚数で判定する簡易モデル。
+  function tileDangerVs(tile, opp, myHand) {
+    const code = normTileCode(tile);
+    const river = opp.kawa.map(k => normTileCode(k.tile));
+    if (river.includes(code)) return 0; // 現物
+    const suit = code[1];
+    const num = parseInt(code[0], 10);
+    if (suit === 'z') {
+      let visible = 0;
+      game.players.forEach(p => {
+        p.kawa.forEach(k => { if (normTileCode(k.tile) === code) visible++; });
+        p.melds.forEach(m => m.tiles.forEach(t => { if (normTileCode(t) === code) visible++; }));
+      });
+      (myHand || []).forEach(t => { if (normTileCode(t) === code) visible++; });
+      if (visible >= 3) return 0.05; // 残りは単騎のみ
+      if (visible === 2) return 0.35;
+      return 0.8;
+    }
+    let danger = (num === 1 || num === 9) ? 0.45
+      : (num === 2 || num === 8) ? 0.6
+      : (num === 3 || num === 7) ? 0.85 : 1.0;
+    const sujiMates = [num - 3, num + 3].filter(n => n >= 1 && n <= 9);
+    if (sujiMates.some(n => river.includes(`${n}${suit}`))) danger *= 0.45; // スジ (両面否定)
+    return danger;
+  }
+
+  function chooseCpuBestDiscard(hand14, meldCount, forbiddenTiles, playerIdx) {
     let minShanten = 99;
     const candidates = [];
+    const shantenByTile = new Map();
     const uniqueTiles = [...new Set(hand14)];
     // 喰い替え禁止の牌は候補から外す (全て禁止の場合のみ例外的に許可)
     const forbidden = (game.rules.kuikae && Array.isArray(forbiddenTiles)) ? forbiddenTiles : [];
@@ -998,6 +1027,7 @@
       const remain = [...hand14];
       remain.splice(remain.indexOf(t), 1);
       const s = window.calculateShanten ? window.calculateShanten(remain, meldCount) : 99;
+      shantenByTile.set(t, s);
       if (s < minShanten) {
         minShanten = s;
         candidates.length = 0;
@@ -1006,6 +1036,29 @@
         candidates.push(t);
       }
     });
+
+    // リーチ者がいる場合の押し引き (聴牌なら押し、1向聴は安全優先、
+    // 2向聴以上はベタオリ)。プレイヤー位置が分かる呼び出しでのみ有効。
+    const riichiOpps = (typeof playerIdx === 'number' && game.players[playerIdx])
+      ? game.players.filter((p, i) => i !== playerIdx && p.isRiichi)
+      : [];
+    if (riichiOpps.length > 0 && minShanten >= 1) {
+      const dangerOf = t => Math.max(...riichiOpps.map(o => tileDangerVs(t, o, hand14)));
+      if (minShanten >= 2) {
+        const ranked = [...targetTiles].sort((a, b) => {
+          const dd = dangerOf(a) - dangerOf(b);
+          if (Math.abs(dd) > 0.001) return dd;
+          return (shantenByTile.get(a) ?? 99) - (shantenByTile.get(b) ?? 99);
+        });
+        return ranked[0];
+      }
+      const safeCandidates = [...candidates].sort((a, b) => dangerOf(a) - dangerOf(b));
+      if (dangerOf(safeCandidates[0]) >= 0.75) {
+        const genbutsu = targetTiles.find(t => dangerOf(t) === 0);
+        if (genbutsu) return genbutsu; // 全候補が危険なら完全安全牌に折れる
+      }
+      return safeCandidates[0];
+    }
 
     candidates.sort((a, b) => getDiscardSafetyScore(b) - getDiscardSafetyScore(a));
     return candidates[0] || hand14[hand14.length - 1];
@@ -1698,7 +1751,7 @@
   function cpuDiscardAfterCall(playerIdx) {
     const cpu = game.players[playerIdx];
     cpu.tsumoTile = null; // 鳴き後はツモ牌なしで手牌から切る
-    const discardTile = chooseCpuBestDiscard(cpu.hand, cpu.melds.length, cpu.kuikaeForbidden);
+    const discardTile = chooseCpuBestDiscard(cpu.hand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx);
     handleDiscardTile(playerIdx, discardTile, false);
   }
 
