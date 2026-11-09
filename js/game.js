@@ -162,6 +162,7 @@
 
       // アクションバー
       gameActionBar: document.getElementById('gameActionBar'),
+      actionBarContext: document.getElementById('actionBarContext'),
       btnActionRon: document.getElementById('btnActionRon'),
       btnActionTsumo: document.getElementById('btnActionTsumo'),
       btnActionRiichi: document.getElementById('btnActionRiichi'),
@@ -715,6 +716,7 @@
     }
 
     if (hasActions) {
+      if (DOM.actionBarContext) DOM.actionBarContext.style.display = 'none';
       DOM.btnActionPass.style.display = 'inline-block';
       DOM.gameActionBar.style.display = 'flex';
       game.pendingActions = { type: 'tsumo', playerIdx: 0, drawnTile };
@@ -1114,6 +1116,19 @@
         canChi,
         canKan
       };
+
+      // どの牌への反応か分かるように、対象の捨て牌を光らせて名前と牌をバーに表示する
+      const kawaContainers = [DOM.kawaJibun, DOM.kawaShimocha, DOM.kawaToimen, DOM.kawaKamicha];
+      const kc = kawaContainers[discarderIdx];
+      if (kc && kc.lastElementChild) kc.lastElementChild.classList.add('kawa-call-target');
+      if (DOM.actionBarContext) {
+        DOM.actionBarContext.innerHTML = '';
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = `${PLAYER_NAMES[discarderIdx]} の捨て牌`;
+        DOM.actionBarContext.appendChild(nameSpan);
+        DOM.actionBarContext.appendChild(createTileDom(tile, true));
+        DOM.actionBarContext.style.display = 'inline-flex';
+      }
       return true;
     }
     return false;
@@ -1669,7 +1684,14 @@
 
     player.kawa.forEach((item, i) => {
       const tileEl = createTileDom(item.tile, true);
+      // 捨て牌は打った本人の方を向く (下家=右向き90° / 対面=180° / 上家=-90°)
+      if (playerIdx > 0) tileEl.classList.add(`kawa-seat-${playerIdx}`);
       if (item.isRiichi) tileEl.classList.add('is-riichi-tile');
+      // 鳴き・ロン応答待ちの対象牌は光らせ続ける (再描画されても維持)
+      const pa = game.pendingActions;
+      if (pa && pa.type === 'discard' && pa.discarderIdx === playerIdx && i === player.kawa.length - 1) {
+        tileEl.classList.add('kawa-call-target');
+      }
       // 演出: 打たれた直後の最新牌だけ、打牌者の方向から滑り込む登場アニメを付ける
       // (renderBoard の再構築方式に合わせたクラス方式。初回描画時のみ・再生は1回だけ)
       const jd = game.justDiscarded;
@@ -1719,6 +1741,11 @@
   }
 
   function hideActionBar() {
+    if (DOM.actionBarContext) {
+      DOM.actionBarContext.style.display = 'none';
+      DOM.actionBarContext.innerHTML = '';
+    }
+    document.querySelectorAll('.kawa-call-target').forEach(el => el.classList.remove('kawa-call-target'));
     if (DOM.gameActionBar) {
       DOM.gameActionBar.style.display = 'none';
       DOM.btnActionRon.style.display = 'none';

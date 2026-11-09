@@ -2009,7 +2009,7 @@ body.mat-theme {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 32px;
+  min-width: 50px;
   align-items: center;
 }
 
@@ -2017,6 +2017,48 @@ body.mat-theme {
 .is-riichi-tile {
   transform: rotate(90deg) !important;
   margin: 0 4px !important;
+}
+
+/* 捨て牌の向き: 打った本人の方を向く (自分の河はそのまま) */
+.kawa-board .mj-tile.kawa-seat-1 { transform: rotate(90deg); }
+.kawa-board .mj-tile.kawa-seat-2 { transform: rotate(180deg); }
+.kawa-board .mj-tile.kawa-seat-3 { transform: rotate(-90deg); }
+.mode-3d .kawa-board .mj-tile.kawa-seat-1 { transform: rotate(90deg) translateZ(2px); }
+.mode-3d .kawa-board .mj-tile.kawa-seat-2 { transform: rotate(180deg) translateZ(2px); }
+.mode-3d .kawa-board .mj-tile.kawa-seat-3 { transform: rotate(-90deg) translateZ(2px); }
+/* リーチ宣言牌は本人の向きからさらに90°横向き */
+.kawa-board .mj-tile.kawa-seat-1.is-riichi-tile { transform: rotate(180deg) !important; }
+.kawa-board .mj-tile.kawa-seat-2.is-riichi-tile { transform: rotate(270deg) !important; }
+.kawa-board .mj-tile.kawa-seat-3.is-riichi-tile { transform: rotate(0deg) !important; }
+
+/* 鳴き・ロン応答待ちの対象牌 (金の鼓動グロー) */
+.kawa-call-target {
+  animation: kawaCallPulse 0.9s ease-in-out infinite;
+  z-index: 3;
+}
+
+@keyframes kawaCallPulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(245, 197, 66, 0.95), 0 0 10px rgba(245, 197, 66, 0.7); }
+  50% { box-shadow: 0 0 0 3px rgba(245, 197, 66, 1), 0 0 22px rgba(245, 197, 66, 0.95); }
+}
+
+/* アクションバーの対象表示 (誰の・どの牌か) */
+.action-bar-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px 3px 12px;
+  margin-right: 2px;
+}
+
+.action-bar-context .mj-tile {
+  pointer-events: none;
 }
 
 /* 卓中央のドラ・局情報表示 */
@@ -2957,21 +2999,21 @@ body.mat-theme {
 }
 
 @keyframes kawaDropFromTop {
-  0% { transform: translateY(-16px) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
-  70% { transform: translateY(1px) scale(1.0); opacity: 1; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+  0% { transform: translateY(-16px) rotate(180deg) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  70% { transform: translateY(1px) rotate(180deg) scale(1.0); opacity: 1; }
+  100% { transform: translateY(0) rotate(180deg) scale(1); opacity: 1; }
 }
 
 @keyframes kawaDropFromRight {
-  0% { transform: translateX(16px) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
-  70% { transform: translateX(-1px) scale(1.0); opacity: 1; }
-  100% { transform: translateX(0) scale(1); opacity: 1; }
+  0% { transform: translateX(16px) rotate(90deg) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  70% { transform: translateX(-1px) rotate(90deg) scale(1.0); opacity: 1; }
+  100% { transform: translateX(0) rotate(90deg) scale(1); opacity: 1; }
 }
 
 @keyframes kawaDropFromLeft {
-  0% { transform: translateX(-16px) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
-  70% { transform: translateX(1px) scale(1.0); opacity: 1; }
-  100% { transform: translateX(0) scale(1); opacity: 1; }
+  0% { transform: translateX(-16px) rotate(-90deg) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  70% { transform: translateX(1px) rotate(-90deg) scale(1.0); opacity: 1; }
+  100% { transform: translateX(0) rotate(-90deg) scale(1); opacity: 1; }
 }
 
 /* リーチ宣言打牌: 通常より大きく落とし、金の閃光を添える */
@@ -2981,9 +3023,32 @@ body.mat-theme {
 }
 
 @keyframes riichiDeclareDrop {
-  0% { transform: translateY(22px) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
-  55% { transform: translateY(0) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
-  100% { transform: translateY(0) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
+  0% { transform: translateY(22px) rotate(90deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  55% { transform: translateY(0) rotate(90deg) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
+  100% { transform: translateY(0) rotate(90deg) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
+}
+
+/* 他家のリーチ宣言打牌は、その家の向きに合わせた落下にする */
+.kawa-just-placed.kawa-drop-1.riichi-declare-drop { animation-name: riichiDeclareDropSeat1; }
+.kawa-just-placed.kawa-drop-2.riichi-declare-drop { animation-name: riichiDeclareDropSeat2; }
+.kawa-just-placed.kawa-drop-3.riichi-declare-drop { animation-name: riichiDeclareDropSeat3; }
+
+@keyframes riichiDeclareDropSeat1 {
+  0% { transform: translateX(22px) rotate(180deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  55% { transform: translateX(0) rotate(180deg) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
+  100% { transform: translateX(0) rotate(180deg) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
+}
+
+@keyframes riichiDeclareDropSeat2 {
+  0% { transform: translateY(-22px) rotate(270deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  55% { transform: translateY(0) rotate(270deg) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
+  100% { transform: translateY(0) rotate(270deg) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
+}
+
+@keyframes riichiDeclareDropSeat3 {
+  0% { transform: translateX(-22px) rotate(0deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  55% { transform: translateX(0) rotate(0deg) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
+  100% { transform: translateX(0) rotate(0deg) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
 }
 
 /* ---- 2. 和了演出: 画面フラッシュ / ランクのスケールイン / 役満モード ---- */
@@ -3077,6 +3142,7 @@ body.mat-theme {
 @media (prefers-reduced-motion: reduce) {
   .kawa-just-placed,
   .kawa-just-placed.riichi-declare-drop,
+  .kawa-call-target,
   .rank-pop,
   .dora-flip-in,
   .riichi-badge.stick-pop,
