@@ -899,6 +899,19 @@
       meld.type = 'kan';
       meld.tiles = [...meld.tiles, added];
       showGameToast('加槓（カカン）！', 'blue');
+
+      // 槍槓チェック: CPUがこの追加牌でロンできる場合はロン解決が優先する
+      const chankanWinners = [];
+      game.players.forEach((p, i) => {
+        if (i === 0) return;
+        const sr = cpuRonScore(p, added, { isChankan: true });
+        if (sr) chankanWinners.push({ idx: i, scoreRes: sr });
+      });
+      if (chankanWinners.length > 0) {
+        player.tsumoTile = null;
+        fireRonWinners(chankanWinners, 0, added, { fromKan: true });
+        return;
+      }
     }
     player.tsumoTile = null;
 
@@ -1175,6 +1188,15 @@
   }
 
   // プレイヤーの応答が無い/パスされた後に、CPUのロン→鳴きの順で解決する
+  // 鳴き・ロンで消費された捨て牌に河で印を付ける (描画で分かるようにする)。
+  // 応答は常に対象の打牌直後に解決されるため、対象は河の最新エントリ。
+  function markKawaCalled(discarderIdx, tile) {
+    const p = game.players[discarderIdx];
+    if (!p || p.kawa.length === 0) return;
+    const last = p.kawa[p.kawa.length - 1];
+    if (normTileCode(last.tile) === normTileCode(tile)) last.called = true;
+  }
+
   function resolveCpuResponses(discarderIdx, tile) {
     // 四風連打: 全員の最初の打牌が同じ風牌で鳴きがなければ途中流局 (ロンは上の段で優先済み)
     if (game.playerCount === 4 &&
@@ -1200,8 +1222,8 @@
       if (idx === 0) continue;
       const cpu = game.players[idx];
       if (cpu.isRiichi) continue;
-      if (cpuWantsMinkan(cpu, tile)) { executeCpuCall(idx, 'kan', tile); return; }
-      if (cpuWantsPon(cpu, tile)) { executeCpuCall(idx, 'pon', tile); return; }
+      if (cpuWantsMinkan(cpu, tile)) { markKawaCalled(discarderIdx, tile); executeCpuCall(idx, 'kan', tile); return; }
+      if (cpuWantsPon(cpu, tile)) { markKawaCalled(discarderIdx, tile); executeCpuCall(idx, 'pon', tile); return; }
     }
     if (n === 4) {
       const shimochaIdx = (discarderIdx + 1) % n;
@@ -1209,7 +1231,7 @@
         const cpu = game.players[shimochaIdx];
         if (!cpu.isRiichi) {
           const chiChoice = cpuDecideChi(cpu, tile);
-          if (chiChoice) { executeCpuCall(shimochaIdx, 'chi', tile, chiChoice); return; }
+          if (chiChoice) { markKawaCalled(discarderIdx, tile); executeCpuCall(shimochaIdx, 'chi', tile, chiChoice); return; }
         }
       }
     }
@@ -1218,7 +1240,9 @@
   }
 
   // ロン和了の解決 (1人なら通常処理、複数ならダブロン/トリロン)
-  function fireRonWinners(winners, loserIdx, tile) {
+  // opts.fromKan: 槍槓ロン (対象は捨て牌ではないので河への印は付けない)
+  function fireRonWinners(winners, loserIdx, tile, opts) {
+    if (!(opts && opts.fromKan)) markKawaCalled(loserIdx, tile);
     if (winners.length === 1) {
       handleAgari(winners[0].idx, loserIdx, tile, false, winners[0].scoreRes);
       return;
@@ -1344,7 +1368,14 @@
       // どの牌への反応か分かるように、対象の捨て牌を光らせて名前と牌をバーに表示する
       const kawaContainers = [DOM.kawaJibun, DOM.kawaShimocha, DOM.kawaToimen, DOM.kawaKamicha];
       const kc = kawaContainers[discarderIdx];
-      if (kc && kc.lastElementChild) kc.lastElementChild.classList.add('kawa-call-target');
+      if (kc && kc.lastElementChild) {
+        // 左右の河はチャンク (列) の中が最新牌
+        let targetEl = kc.lastElementChild;
+        if (targetEl.classList.contains('kawa-chunk') && targetEl.lastElementChild) {
+          targetEl = targetEl.lastElementChild;
+        }
+        targetEl.classList.add('kawa-call-target');
+      }
       if (DOM.actionBarContext) {
         DOM.actionBarContext.innerHTML = '';
         const nameSpan = document.createElement('span');
@@ -1371,7 +1402,7 @@
   }
 
   // CPUがその牌でロンできるなら scoreRes を、できなければ null を返す (発火は呼び出し側)
-  function cpuRonScore(cpu, tile) {
+  function cpuRonScore(cpu, tile, extraOpts) {
     const testHand = [...cpu.hand, tile];
     const s = window.calculateShanten ? window.calculateShanten(testHand, cpu.melds.length) : 99;
     if (s === -1 && !isFuritenNow(cpu)) {
@@ -1389,7 +1420,8 @@
           doraCount: countDora(testHand, game.doraIndicators),
           uraDoraCount: cpu.isRiichi ? countDora(testHand, game.uraDoraIndicators) : 0,
           honba: game.honba,
-          ...buildSituationalOptions(cpu, false)
+          ...buildSituationalOptions(cpu, false),
+          ...(extraOpts || {})
         }
       });
       if (scoreRes && scoreRes.han >= 1) return scoreRes;
@@ -1437,7 +1469,30 @@
 
     if (!pending) return;
 
+    // プレイヤーの鳴きで消費される捨て牌にも印を付ける (ロンは fireRonWinners 側)
+    if (pending.type === 'discard' && (action === 'pon' || action === 'chi' || action === 'kan')) {
+      markKawaCalled(pending.discarderIdx, pending.tile);
+    }
+
     if (action === 'pass') {
+      if (pending.type === 'chankan') {
+        // 槍槓の見逃しはフリテンになる (打牌の見逃しと同じ扱い)
+        if (pending.canRon) {
+          const p0 = game.players[0];
+          if (p0.isRiichi) p0.riichiFuriten = true;
+          else p0.tempFuriten = true;
+          p0.furiten = true;
+        }
+        // 保留中のCPUロンがあればそれを確定し、なければ加槓を続行する
+        if (game.pendingCpuRons && game.pendingCpuRons.length > 0) {
+          const winners = game.pendingCpuRons;
+          game.pendingCpuRons = [];
+          fireRonWinners(winners, pending.kanPlayerIdx, pending.tile, { fromKan: true });
+          return;
+        }
+        resumeCpuKan(pending.kanPlayerIdx);
+        return;
+      }
       if (pending.type === 'discard') {
         // ロンを見逃した場合はフリテンになる
         if (pending.canRon) {
@@ -1477,6 +1532,16 @@
     }
 
     if (action === 'ron') {
+      if (pending.type === 'chankan') {
+        // 槍槓ロン: 保留中のCPUロンと合わせて解決 (ダブロンあり)
+        const winners = [{ idx: 0, scoreRes: pending.scoreRes }];
+        if (game.pendingCpuRons && game.pendingCpuRons.length > 0) {
+          winners.push(...game.pendingCpuRons);
+        }
+        game.pendingCpuRons = [];
+        fireRonWinners(winners, pending.kanPlayerIdx, pending.tile, { fromKan: true });
+        return;
+      }
       const player = game.players[0];
       const fullHand = [...player.hand, pending.tile];
       const scoreRes = calcScoreSafe({
@@ -1796,15 +1861,99 @@
     }
     cpu.tsumoTile = null;
 
+    // 加槓は槍槓ロンの応答を先に解決する (止まった場合はここで終了)
+    if (opt.kind === 'kakan') {
+      const addedTile = cpu.melds.find(m => m.type === 'kan' && normTileCode(m.tiles[0]) === opt.tile).tiles[3];
+      if (resolveChankan(playerIdx, addedTile)) return true;
+    }
+
+    resumeCpuKan(playerIdx);
+    return true;
+  }
+
+  // カン確定後の続行: カンドラ追加 → 嶺上ツモ → そのCPUのツモフェーズへ
+  function resumeCpuKan(playerIdx) {
+    const cpu = game.players[playerIdx];
+    cpu.tsumoTile = null;
     addKanDora();
     const rinshan = drawRinshanTile();
     game.currentTurn = playerIdx;
-    if (!rinshan) { renderBoard(); return true; }
+    if (!rinshan) { renderBoard(); return; }
     cpu.tsumoTile = rinshan;
     cpu.lastDrawWasRinshan = true;
     game.lastDrawnTile = rinshan;
     renderBoard();
     game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), 450);
+  }
+
+  // 加槓の追加牌に対する槍槓 (チャンカン) 応答を解決する。
+  // true: 加槓の続行が止まった (ロン確定 or プレイヤーの判断待ち)。
+  // false: 誰もロンできないので加槓を続行してよい。
+  function resolveChankan(kanPlayerIdx, tile) {
+    // CPU側の槍槓ロン (宣言者とプレイヤー以外)
+    const cpuRons = [];
+    game.players.forEach((p, i) => {
+      if (i === kanPlayerIdx || i === 0) return;
+      const sr = cpuRonScore(p, tile, { isChankan: true });
+      if (sr) cpuRons.push({ idx: i, scoreRes: sr });
+    });
+
+    // プレイヤーの槍槓ロン可否
+    const player = game.players[0];
+    let playerScoreRes = null;
+    const testHand = [...player.hand, tile];
+    const s = window.calculateShanten ? window.calculateShanten(testHand, player.melds.length) : 99;
+    if (s === -1 && !isFuritenNow(player)) {
+      playerScoreRes = calcScoreSafe({
+        hand: player.hand,
+        winTile: tile,
+        isTsumo: false,
+        isDealer: (player.seatWind === '1z'),
+        melds: player.melds,
+        options: {
+          isRiichi: player.isRiichi,
+          isIppatsu: player.ippatsu,
+          roundWind: game.roundWind,
+          seatWind: player.seatWind,
+          doraCount: countDora(testHand, game.doraIndicators),
+          uraDoraCount: player.isRiichi ? countDora(testHand, game.uraDoraIndicators) : 0,
+          honba: game.honba,
+          ...buildSituationalOptions(player, false),
+          isChankan: true
+        }
+      });
+      if (!(playerScoreRes && playerScoreRes.han >= 1)) playerScoreRes = null;
+    }
+
+    if (!playerScoreRes) {
+      if (cpuRons.length > 0) {
+        fireRonWinners(cpuRons, kanPlayerIdx, tile, { fromKan: true });
+        return true;
+      }
+      return false;
+    }
+
+    // プレイヤーに判断を委ねる (CPUロンは保留し、プレイヤーがロンすればダブロン)
+    game.pendingCpuRons = cpuRons;
+    game.pendingActions = {
+      type: 'chankan',
+      kanPlayerIdx,
+      tile,
+      canRon: true,
+      scoreRes: playerScoreRes
+    };
+    renderBoard();
+    DOM.btnActionRon.style.display = 'inline-block';
+    DOM.btnActionPass.style.display = 'inline-block';
+    DOM.gameActionBar.style.display = 'flex';
+    if (DOM.actionBarContext) {
+      DOM.actionBarContext.innerHTML = '';
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = `${PLAYER_NAMES[kanPlayerIdx]} の加槓`;
+      DOM.actionBarContext.appendChild(nameSpan);
+      DOM.actionBarContext.appendChild(createTileDom(tile, true));
+      DOM.actionBarContext.style.display = 'inline-flex';
+    }
     return true;
   }
 
@@ -2223,11 +2372,17 @@
     if (!player) return;
     container.innerHTML = '';
 
+    // 左右の河は6枚ごとのチャンク (列) に分けて描く (6枚折り返しレイアウト)
+    const sideSeat = (playerIdx === 1 || playerIdx === 3);
+    let chunkEl = null;
+    let inChunk = 0;
+
     player.kawa.forEach((item, i) => {
       const tileEl = createTileDom(item.tile, true);
       // 捨て牌は打った本人の方を向く (下家=右向き90° / 対面=180° / 上家=-90°)
       if (playerIdx > 0) tileEl.classList.add(`kawa-seat-${playerIdx}`);
       if (item.isRiichi) tileEl.classList.add('is-riichi-tile');
+      if (item.called) tileEl.classList.add('kawa-called');
       // 鳴き・ロン応答待ちの対象牌は光らせ続ける (再描画されても維持)
       const pa = game.pendingActions;
       if (pa && pa.type === 'discard' && pa.discarderIdx === playerIdx && i === player.kawa.length - 1) {
@@ -2245,7 +2400,18 @@
       if (jd && jd.playerIdx === playerIdx && i === player.kawa.length - 1) {
         tileEl.classList.add('kawa-latest');
       }
-      container.appendChild(tileEl);
+      if (sideSeat) {
+        if (!chunkEl || inChunk >= 6) {
+          chunkEl = document.createElement('div');
+          chunkEl.classList.add('kawa-chunk');
+          container.appendChild(chunkEl);
+          inChunk = 0;
+        }
+        chunkEl.appendChild(tileEl);
+        inChunk++;
+      } else {
+        container.appendChild(tileEl);
+      }
     });
   }
 

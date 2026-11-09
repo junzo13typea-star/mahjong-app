@@ -2016,19 +2016,33 @@ body.mat-theme {
   flex-direction: row-reverse;
 }
 
+/* 左右の河: 6枚ごとのチャンク (列) を横に並べる帯 */
 .kawa-col {
   display: flex;
-  flex-direction: column;
   gap: 2px;
   min-width: 50px;
   height: 100%;
-  justify-content: flex-start;
-  align-items: center;
+  justify-content: center;
+  align-items: stretch;
 }
 
-/* 下家の河は本人の左 (自分からは下) から並ぶ */
+/* 6枚1組の列。上家は上から、下家は下から積む */
+.kawa-chunk {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+/* 下家の河は本人の左 (自分からは下) から並び、列は卓中央へ伸びる */
 .kawa-shimocha {
+  flex-direction: row-reverse;
+}
+
+.kawa-shimocha .kawa-chunk {
   flex-direction: column-reverse;
+  justify-content: flex-start;
 }
 
 /* 左右の河: 回転した牌の見た目の高さに合わせて詰める */
@@ -2067,6 +2081,12 @@ body.mat-theme {
 @keyframes kawaCallPulse {
   0%, 100% { box-shadow: 0 0 0 2px rgba(245, 197, 66, 0.95), 0 0 10px rgba(245, 197, 66, 0.7); }
   50% { box-shadow: 0 0 0 3px rgba(245, 197, 66, 1), 0 0 22px rgba(245, 197, 66, 0.95); }
+}
+
+/* 鳴き・ロンで消費された捨て牌 (河に残るが薄くグレーにして判別可能に) */
+.kawa-board .mj-tile.kawa-called {
+  filter: grayscale(0.8) brightness(0.68);
+  opacity: 0.62;
 }
 
 /* アクションバーの対象表示 (誰の・どの牌か) */
