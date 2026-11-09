@@ -25,6 +25,8 @@
 
   --text-primary: #f8fafc;
   --text-muted: #94a3b8;
+  /* 中緑背景 (#064e3b) 上でも 4.5:1 以上 (≈5.5:1) を確保する補助文字色 */
+  --text-muted-bright: #b3c5d8;
   --card-bg: rgba(6, 42, 33, 0.85);
   --card-border: rgba(52, 211, 153, 0.25);
 
@@ -551,7 +553,7 @@ body.mat-theme {
 
 .man-num {
   font-size: 1.25rem;
-  color: #b91c1c;
+  color: #20242c;
   letter-spacing: -0.04em;
   filter: drop-shadow(0 0.5px 0.5px rgba(255, 255, 255, 0.8));
 }
@@ -1700,7 +1702,7 @@ body.mat-theme {
 .rule-seg-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--text-muted-bright);
   font-size: 0.78rem;
   font-weight: 700;
   padding: 4px 10px;
@@ -2040,7 +2042,7 @@ body.mat-theme {
 
 .dora-title {
   font-size: 0.65rem;
-  color: #94a3b8;
+  color: var(--text-muted-bright);
   display: block;
 }
 
@@ -2053,7 +2055,7 @@ body.mat-theme {
 .turn-indicator {
   font-size: 0.72rem;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--text-muted-bright);
   padding: 2px 8px;
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.3);
@@ -2907,4 +2909,347 @@ body.mat-theme {
 
 .ocr-confirm-actions {
   flex-wrap: wrap;
+}
+
+
+/* ===================================================
+   ルール設定バー (2026-11-09 Muse)
+   =================================================== */
+.game-rules-bar {
+  flex-basis: 100%;
+  border-top: 1px solid rgba(245, 158, 11, 0.22);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+
+.rules-bar-label {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #f5c86e;
+  margin-right: 2px;
+}
+
+/* ===================================================
+   演出一式 (2026-11-09 Muse): 打牌アニメ / 和了演出 /
+   槓ドラめくり / リーチ棒ポップ / 役満モード
+   ※ すべて視覚演出のみ。対局ロジックには影響しない。
+   =================================================== */
+
+/* ---- 1. 打牌アニメーション: 河の最新牌が打牌者の方向から滑り込む ---- */
+/* 座席のローカル座標系で「手元側」から入る: 0=自分(下) 1=下家(右) 2=対面(上) 3=上家(左) */
+.kawa-just-placed {
+  animation-duration: 0.3s;
+  animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  animation-fill-mode: both;
+  z-index: 2;
+}
+
+.kawa-drop-0 { animation-name: kawaDropFromBottom; }
+.kawa-drop-1 { animation-name: kawaDropFromRight; }
+.kawa-drop-2 { animation-name: kawaDropFromTop; }
+.kawa-drop-3 { animation-name: kawaDropFromLeft; }
+
+@keyframes kawaDropFromBottom {
+  0% { transform: translateY(16px) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  70% { transform: translateY(-1px) scale(1.0); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes kawaDropFromTop {
+  0% { transform: translateY(-16px) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  70% { transform: translateY(1px) scale(1.0); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes kawaDropFromRight {
+  0% { transform: translateX(16px) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  70% { transform: translateX(-1px) scale(1.0); opacity: 1; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+
+@keyframes kawaDropFromLeft {
+  0% { transform: translateX(-16px) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  70% { transform: translateX(1px) scale(1.0); opacity: 1; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+
+/* リーチ宣言打牌: 通常より大きく落とし、金の閃光を添える */
+.kawa-just-placed.riichi-declare-drop {
+  animation-duration: 0.45s;
+  animation-name: riichiDeclareDrop;
+}
+
+@keyframes riichiDeclareDrop {
+  0% { transform: translateY(22px) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  55% { transform: translateY(0) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
+  100% { transform: translateY(0) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
+}
+
+/* ---- 2. 和了演出: 画面フラッシュ / ランクのスケールイン / 役満モード ---- */
+.modal-overlay.agari-flash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(255, 246, 200, 0.95) 0%, rgba(255, 214, 90, 0.45) 45%, rgba(255, 214, 90, 0) 75%);
+  animation: agariFlash 0.65s ease-out both;
+  pointer-events: none;
+  z-index: 3;
+}
+
+@keyframes agariFlash {
+  0% { opacity: 0; }
+  18% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.rank-pop {
+  animation: rankPop 0.6s cubic-bezier(0.2, 1.5, 0.3, 1) both;
+}
+
+@keyframes rankPop {
+  0% { transform: scale(0.4); opacity: 0; filter: brightness(2.2); }
+  60% { transform: scale(1.18); opacity: 1; filter: brightness(1.5); }
+  100% { transform: scale(1); opacity: 1; filter: brightness(1); }
+}
+
+/* 役満: 画面全体に金の光線がゆっくり回り、カードが金に輝く */
+.modal-overlay.yakuman-mode::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  background: repeating-conic-gradient(from 0deg at 50% 50%,
+    rgba(255, 215, 0, 0.16) 0deg 9deg,
+    rgba(255, 215, 0, 0) 9deg 22deg);
+  animation: yakumanRays 14s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes yakumanRays {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.modal-overlay.yakuman-mode .game-result-card {
+  position: relative;
+  z-index: 1;
+  border-color: #ffd700;
+  animation: winPop 0.45s cubic-bezier(0.2, 1.4, 0.3, 1) both,
+             yakumanGlow 1.5s ease-in-out 0.45s infinite alternate;
+}
+
+@keyframes yakumanGlow {
+  from { box-shadow: 0 0 24px rgba(255, 215, 0, 0.55), 0 10px 40px rgba(0, 0, 0, 0.8); }
+  to { box-shadow: 0 0 58px rgba(255, 215, 0, 0.95), 0 10px 40px rgba(0, 0, 0, 0.8); }
+}
+
+.modal-overlay.yakuman-mode .score-rank-badge {
+  background: linear-gradient(180deg, #ffe97a, #f5b90d);
+  color: #4a2f00;
+  box-shadow: 0 0 18px rgba(255, 215, 0, 0.8);
+}
+
+/* ---- 3. 槓ドラめくり: 新規表示牌が裏から返る ---- */
+.dora-flip-in {
+  animation: doraFlip 0.55s cubic-bezier(0.3, 0.7, 0.3, 1) both;
+  transform-origin: center center;
+}
+
+@keyframes doraFlip {
+  0% { transform: rotateY(88deg) scale(0.92); filter: brightness(0.6); }
+  55% { transform: rotateY(-12deg) scale(1.06); filter: brightness(1.35); }
+  100% { transform: rotateY(0deg) scale(1); filter: brightness(1); }
+}
+
+/* ---- 4. リーチ棒 (供託) が置かれる動き: バッジのポップ ---- */
+.riichi-badge.stick-pop {
+  animation: stickPop 0.55s cubic-bezier(0.2, 1.6, 0.3, 1) both;
+}
+
+@keyframes stickPop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.28); filter: brightness(1.7); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+/* ---- モーション軽減時は演出一式を止める ---- */
+@media (prefers-reduced-motion: reduce) {
+  .kawa-just-placed,
+  .kawa-just-placed.riichi-declare-drop,
+  .rank-pop,
+  .dora-flip-in,
+  .riichi-badge.stick-pop,
+  .modal-overlay.yakuman-mode .game-result-card {
+    animation: none;
+  }
+  .modal-overlay.agari-flash::after,
+  .modal-overlay.yakuman-mode::before {
+    display: none;
+    animation: none;
+  }
+}
+
+
+/* ===================================================
+   UI改善 (2026-11-09 Muse): セーフエリア / タップ領域 /
+   ヘルプ・確認モーダル / OCRローディング / モバイル手牌
+   =================================================== */
+
+/* ---- セーフエリア: 下部固定ドックにホームインジケーター分を加算 ---- */
+.palette-dock {
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
+body.mat-theme {
+  padding-bottom: calc(130px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---- パレット切替タブ: タップ高さ 40px 以上 ---- */
+.palette-tab {
+  min-height: 40px;
+  padding: 10px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- ヘッダーボタン (モバイル): タップ高さ 40px 以上 ---- */
+@media (max-width: 560px) {
+  .app-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .header-actions .btn-ghost {
+    min-height: 40px;
+    padding: 8px 10px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* ---- 遊び方ヘルプモーダル ---- */
+.help-card {
+  max-width: 560px;
+}
+
+.help-body {
+  max-height: 65vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 0.88rem;
+  line-height: 1.65;
+  color: #e2e8f0;
+}
+
+.help-body h4 {
+  color: var(--gold-text);
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+.help-body ul {
+  padding-left: 1.25em;
+}
+
+.help-body li {
+  margin: 3px 0;
+}
+
+/* ---- カスタム確認ダイアログ ---- */
+.confirm-card {
+  max-width: 420px;
+}
+
+.confirm-message {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #f1f5f9;
+}
+
+/* ---- OCR認識中ローディング ---- */
+.ocr-card {
+  position: relative;
+}
+
+.ocr-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(3, 24, 18, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border-radius: inherit;
+}
+
+.ocr-spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 4px solid rgba(245, 158, 11, 0.25);
+  border-top-color: #f59e0b;
+  animation: ocrSpin 0.8s linear infinite;
+}
+
+@keyframes ocrSpin {
+  to { transform: rotate(360deg); }
+}
+
+.ocr-loading-text {
+  color: var(--gold-text);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ocr-spinner {
+    animation: none;
+  }
+}
+
+/* ---- モバイル: 自分の手牌14枚が画面幅に収まる可変サイズ ----
+   牌幅 = (100vw - 88px) / 14 (余白・枠・牌間隔の合計を差し引いた可変計算)。
+   高さは牌の縦横比 (64/46 ≒ 1.4) を維持。
+   360px 幅では牌幅 ≒ 19.4px と小さくなるが、14枚を横スクロールなしで
+   一望できることを優先したバランス (詳細は ui-fix-log.md)。
+   デスクトップ (>480px) の表示は従来どおり不変。 */
+@media (max-width: 480px) {
+  .mahjong-table-viewport {
+    padding: 12px 2px 16px;
+  }
+  .mahjong-table-mat {
+    border-width: 3px;
+  }
+  .jibun-hand-container {
+    flex-wrap: wrap;
+    padding: 6px 4px;
+    gap: 6px;
+  }
+  .jibun-tiles-row {
+    gap: 6px;
+  }
+  .hand-tiles-group {
+    gap: 1px;
+  }
+  .jibun-tiles-row .mj-tile,
+  .jibun-tiles-row .mahjong-tile {
+    width: calc((100vw - 88px) / 14);
+    height: calc((100vw - 88px) / 14 * 1.4);
+    border-bottom-width: 3px;
+  }
+  .jibun-tiles-row .man-num { font-size: 0.6rem; }
+  .jibun-tiles-row .man-kanji { font-size: 0.55rem; }
+  .jibun-tiles-row .ji-text { font-size: 0.78rem; }
+  .jibun-tiles-row .haku-frame { border-width: 1.5px; }
+  .jibun-tiles-row .red-dot-badge {
+    width: 5px;
+    height: 5px;
+    top: 2px;
+    right: 2px;
+  }
 }

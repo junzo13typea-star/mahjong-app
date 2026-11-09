@@ -137,6 +137,14 @@
     DOM.meldPromptText = document.getElementById('meldPromptText');
     DOM.meldsArea = document.getElementById('meldsArea');
     DOM.meldsList = document.getElementById('meldsList');
+
+    // ヘルプモーダル / OCRローディング / トースト通知領域
+    DOM.btnOpenHelp = document.getElementById('btnOpenHelp');
+    DOM.helpModal = document.getElementById('helpModal');
+    DOM.btnCloseHelp = document.getElementById('btnCloseHelp');
+    DOM.btnCloseHelpFooter = document.getElementById('btnCloseHelpFooter');
+    DOM.ocrLoading = document.getElementById('ocrLoading');
+    DOM.toastLiveRegion = document.getElementById('toastLiveRegion');
   }
 
   // --- 初期化 ---
@@ -149,6 +157,9 @@
 
     // デフォルトでサンプル牌姿を1つロード（清一色・多面張テンパイ）
     loadSampleHand(0);
+
+    // 初回訪問時のみ、遊び方ヘルプを一度だけ自動で開く
+    maybeOpenHelpFirstTime();
   }
 
   // --- イベントリスナー設定 ---
@@ -282,6 +293,44 @@
 
     // 副露モーダルイベント
     setupMeldModalEvents();
+
+    // ヘルプモーダルの開閉
+    if (DOM.btnOpenHelp) DOM.btnOpenHelp.addEventListener('click', openHelp);
+    if (DOM.btnCloseHelp) DOM.btnCloseHelp.addEventListener('click', closeHelp);
+    if (DOM.btnCloseHelpFooter) DOM.btnCloseHelpFooter.addEventListener('click', closeHelp);
+    if (DOM.helpModal) {
+      DOM.helpModal.addEventListener('click', (e) => {
+        if (e.target === DOM.helpModal) closeHelp();
+      });
+    }
+  }
+
+  // --- 遊び方ヘルプ ---
+  const HELP_SEEN_KEY = 'mahjong_help_seen';
+
+  function openHelp() {
+    if (DOM.helpModal) DOM.helpModal.classList.remove('hidden');
+  }
+
+  function closeHelp() {
+    if (DOM.helpModal) DOM.helpModal.classList.add('hidden');
+  }
+
+  // 初回訪問時のみ自動で一度開き、フラグを保存して再表示しない
+  function maybeOpenHelpFirstTime() {
+    let seen = true; // 読めない環境では自動表示しない (毎回開くのを防ぐ)
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        seen = !!localStorage.getItem(HELP_SEEN_KEY);
+      }
+    } catch (e) { /* localStorage 不可の環境では自動表示しない */ }
+    if (seen) return;
+    openHelp();
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem(HELP_SEEN_KEY, '1');
+      }
+    } catch (e) { /* 保存できなくても動作は継続 */ }
   }
 
   // --- タブ切り替え ---
@@ -504,6 +553,7 @@
       delBtn.className = 'btn-del-meld';
       delBtn.textContent = '×';
       delBtn.title = '鳴きを解除';
+      delBtn.setAttribute('aria-label', '鳴きを解除');
       delBtn.addEventListener('click', () => {
         state.melds.splice(mIdx, 1);
         renderHand();
@@ -715,6 +765,32 @@
     });
   }
 
+  // --- ドラ計算ヘルパー ---
+  // ドラ表示牌から実際のドラ牌を求める
+  function getNextDoraTile(indicator) {
+    const raw = window.normalizeTile ? window.normalizeTile(indicator) : indicator;
+    const suit = raw[1];
+    const num = parseInt(raw[0], 10);
+    if (suit === 'z') {
+      if (num <= 4) return `${(num % 4) + 1}z`;       // 風牌: 東→南→西→北→東
+      return `${((num - 5 + 1) % 3) + 5}z`;           // 三元牌: 白→發→中→白
+    }
+    return `${(num % 9) + 1}${suit}`;
+  }
+
+  // 表示牌リストに対応するドラ牌が tiles の中に何枚あるか数える
+  function countDoraTiles(indicators, tiles) {
+    let count = 0;
+    indicators.forEach(ind => {
+      const target = getNextDoraTile(ind);
+      tiles.forEach(t => {
+        const raw = window.normalizeTile ? window.normalizeTile(t) : t;
+        if (raw === target) count++;
+      });
+    });
+    return count;
+  }
+
   // --- 点数計算ハンドラー ---
   function handleCalculateScore() {
     // 手牌の準備
@@ -737,24 +813,33 @@
       return;
     }
 
-    // ドラの結合
+    // ドラ表示牌リスト
     const allDoras = [...state.doraList.filter(Boolean)];
     const allUraDoras = [...state.uraDoraList.filter(Boolean)];
 
-    // 計算実行
+    // ドラ枚数の算出: 手牌＋和了牌＋副露の中の「ドラ本体」を数える
+    // (赤ドラ分は calculateScore が手牌から自動加算するため、ここでは数えない)
+    const allHandTiles = [...state.hand];
+    if (state.winTile) allHandTiles.push(state.winTile);
+    state.melds.forEach(m => m.tiles.forEach(t => allHandTiles.push(t)));
+    const doraCount = countDoraTiles(allDoras, allHandTiles);
+    const uraDoraCount = countDoraTiles(allUraDoras, allHandTiles);
+
+    // 計算実行 (calculateScore が読む options 形式に変換して渡す)
     const calcInput = {
       hand: fullHand,
       winTile: winTile,
       isTsumo: state.isTsumo,
       isDealer: state.isDealer,
       melds: state.melds,
-      doraTiles: allDoras,
-      uraDoraTiles: allUraDoras,
-      options: state.options,
-      bakaze: state.bakaze,
-      jikaze: state.jikaze,
-      honba: state.honba,
-      kyotaku: state.kyotaku
+      options: {
+        ...state.options,
+        doraCount: doraCount,
+        uraDoraCount: uraDoraCount,
+        roundWind: state.bakaze,
+        seatWind: state.jikaze,
+        honba: state.honba
+      }
     };
 
     const result = window.calculateScore(calcInput);
@@ -776,16 +861,16 @@
     DOM.resScoreRank.textContent = res.rankTitle ? `【${res.rankTitle}】` : '';
     DOM.resScorePoints.innerHTML = `${res.points.total.toLocaleString()} <span class="pts-unit">点</span>`;
 
-    // 支払い内訳テキスト
+    // 支払い内訳テキスト (isDealer / isTsumo は結果に含まれないため state を参照)
     let paymentDesc = '';
-    if (res.isDealer) {
-      if (res.isTsumo) {
+    if (state.isDealer) {
+      if (state.isTsumo) {
         paymentDesc = `（子：各 ${res.points.koTsumo.toLocaleString()} 点オール）`;
       } else {
         paymentDesc = `（放銃者：${res.points.ron.toLocaleString()} 点）`;
       }
     } else {
-      if (res.isTsumo) {
+      if (state.isTsumo) {
         paymentDesc = `（親：${res.points.oyaTsumo.toLocaleString()} 点 / 子：各 ${res.points.koTsumo.toLocaleString()} 点）`;
       } else {
         paymentDesc = `（放銃者：${res.points.ron.toLocaleString()} 点）`;
@@ -800,8 +885,8 @@
       DOM.resHanFu.textContent = `${res.han} 翻  ${res.fu} 符`;
     }
 
-    DOM.resHonbaDesc.textContent = `本場加算: +${(res.points.honbaBonus || 0).toLocaleString()}点 (${res.honba}本場)`;
-    DOM.resKyotakuDesc.textContent = `供託受取: +${((res.kyotaku || 0) * 1000).toLocaleString()}点 (${res.kyotaku}本)`;
+    DOM.resHonbaDesc.textContent = `本場加算: +${(res.points.honbaBonus || 0).toLocaleString()}点 (${state.honba}本場)`;
+    DOM.resKyotakuDesc.textContent = `供託受取: +${(state.kyotaku * 1000).toLocaleString()}点 (${state.kyotaku}本)`;
 
     // 役一覧
     DOM.resYakuList.innerHTML = '';
@@ -866,12 +951,16 @@
 
     DOM.btnStartCamera.addEventListener('click', async () => {
       try {
-        await ocrEngine.startCamera(DOM.cameraVideo);
+        const started = await ocrEngine.startCamera(DOM.cameraVideo);
+        if (!started) {
+          showToast('カメラの起動に失敗しました。ブラウザのカメラ許可を確認するか、「画像を選択」から撮影済みの写真を読み込んでください', 6000);
+          return;
+        }
         DOM.cameraVideo.classList.remove('hidden');
         DOM.cameraPlaceholder.classList.add('hidden');
         DOM.cameraControls.classList.remove('hidden');
       } catch (err) {
-        alert('カメラの起動に失敗しました: ' + err.message);
+        showToast('カメラの起動に失敗しました: ' + err.message + '。カメラの許可設定を確認するか、画像アップロードをお試しください', 6000);
       }
     });
 
@@ -883,10 +972,8 @@
     });
 
     DOM.btnCapturePhoto.addEventListener('click', () => {
-      const snap = ocrEngine.captureSnapshot(DOM.cameraVideo);
-      if (snap) {
-        processOcrImage(snap.image);
-      }
+      // 現在のビデオフレームをそのまま認識対象にする
+      processOcrImage(DOM.cameraVideo);
     });
 
     DOM.fileInputOcr.addEventListener('change', (e) => {
@@ -924,9 +1011,41 @@
     });
   }
 
-  // OCR画像解析実行
-  function processOcrImage(imgElement) {
-    const detected = ocrEngine.detectHandFromImage(imgElement, 14);
+  // OCR認識中ローディング表示の切替
+  function setOcrLoading(on) {
+    if (!DOM.ocrLoading) return;
+    DOM.ocrLoading.classList.toggle('hidden', !on);
+  }
+
+  // OCR画像解析実行 (ocr.js の recognizeHand: 非同期・{tile, confidence} 配列)
+  async function processOcrImage(imgElement) {
+    setOcrLoading(true);
+    try {
+      await runOcrRecognition(imgElement);
+    } finally {
+      // 成功・失敗どちらの経路でもローディングを確実に消す
+      setOcrLoading(false);
+    }
+  }
+
+  async function runOcrRecognition(imgElement) {
+    let detected = [];
+    try {
+      const results = await ocrEngine.recognizeHand(imgElement);
+      detected = (results || [])
+        .map(r => (r && typeof r.tile === 'string') ? r.tile : null)
+        .filter(t => t && window.TILE_DEFS[t]);
+    } catch (err) {
+      console.error('OCR error:', err);
+      showToast('OCR解析に失敗しました。画像を確認してもう一度お試しください');
+      return;
+    }
+
+    if (detected.length === 0) {
+      showToast('牌を検出できませんでした。手牌が横一列に写るよう撮影してください');
+      return;
+    }
+
     ocrDetectedTiles = detected;
 
     DOM.ocrResultCard.classList.remove('hidden');
@@ -942,7 +1061,7 @@
       DOM.ocrDetectedTiles.appendChild(tEl);
     });
 
-    showToast(`手牌14枚を検出しました！誤認識があれば牌をタップして修正できます。`);
+    showToast(`手牌${detected.length}枚を検出しました！誤認識があれば牌をタップして修正できます。`);
   }
 
   function promptEditOcrTile(idx) {
@@ -979,6 +1098,14 @@
 
     DOM.btnConfirmMeld.addEventListener('click', () => {
       const { type, selectedTiles } = state.meldModalState;
+
+      // 組み合わせの検証 (チー=同色連番3枚 / ポン=同種3枚 / カン=同種4枚)
+      const validation = validateMeldTiles(type, selectedTiles);
+      if (!validation.ok) {
+        showToast(validation.message);
+        return;
+      }
+
       state.melds.push({
         type: type,
         tiles: [...selectedTiles]
@@ -987,6 +1114,40 @@
       renderHand();
       updateShantenDisplay();
     });
+  }
+
+  // 副露の牌組み合わせが正しい形かどうかを検証
+  function validateMeldTiles(type, selectedTiles) {
+    const norm = selectedTiles.map(t => window.normalizeTile ? window.normalizeTile(t) : t);
+
+    if (type === 'chi') {
+      if (norm.length !== 3) return { ok: false, message: 'チーは3枚選択してください' };
+      const suit = norm[0][1];
+      if (suit === 'z' || !norm.every(t => t[1] === suit)) {
+        return { ok: false, message: 'チーは同じ色の数牌3枚でなければなりません' };
+      }
+      const nums = norm.map(t => parseInt(t[0], 10)).sort((a, b) => a - b);
+      if (!(nums[1] === nums[0] + 1 && nums[2] === nums[1] + 1)) {
+        return { ok: false, message: 'チーは連番（例: 3・4・5）でなければなりません' };
+      }
+      return { ok: true };
+    }
+
+    if (type === 'pon') {
+      if (norm.length !== 3 || !norm.every(t => t === norm[0])) {
+        return { ok: false, message: 'ポンは同じ牌3枚でなければなりません' };
+      }
+      return { ok: true };
+    }
+
+    if (type === 'kan' || type === 'ankan') {
+      if (norm.length !== 4 || !norm.every(t => t === norm[0])) {
+        return { ok: false, message: 'カンは同じ牌4枚でなければなりません' };
+      }
+      return { ok: true };
+    }
+
+    return { ok: false, message: '不明な鳴き種別です' };
   }
 
   function renderMeldPickerPalette() {
@@ -1083,10 +1244,29 @@
     showToast(`サンプルを読み込みました: ${s.name}`);
   }
 
-  // トースト通知
-  function showToast(msg) {
-    const existing = document.querySelector('.mahjong-toast');
-    if (existing) existing.remove();
+  // トースト通知 (aria-live のライブリージョン内に表示し、読み上げにも対応)
+  let toastEl = null;
+  let toastTimer = null;
+
+  function getToastRegion() {
+    if (DOM.toastLiveRegion) return DOM.toastLiveRegion;
+    let region = document.getElementById('toastLiveRegion');
+    if (!region) {
+      region = document.createElement('div');
+      region.id = 'toastLiveRegion';
+      region.setAttribute('aria-live', 'polite');
+      region.setAttribute('aria-atomic', 'true');
+      document.body.appendChild(region);
+    }
+    DOM.toastLiveRegion = region;
+    return region;
+  }
+
+  function showToast(msg, durationMs) {
+    const region = getToastRegion();
+
+    if (toastEl) { toastEl.remove(); toastEl = null; }
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
 
     const toast = document.createElement('div');
     toast.className = 'mahjong-toast';
@@ -1105,12 +1285,16 @@
       font-weight: 700;
       box-shadow: 0 4px 20px rgba(0,0,0,0.6);
       z-index: 9999;
+      max-width: min(92vw, 560px);
+      text-align: center;
       animation: fadeIn 0.2s ease;
     `;
-    document.body.appendChild(toast);
-    setTimeout(() => {
+    region.appendChild(toast);
+    toastEl = toast;
+    toastTimer = setTimeout(() => {
       toast.remove();
-    }, 2800);
+      if (toastEl === toast) toastEl = null;
+    }, durationMs || 2800);
   }
 
   // DOMContentLoadedで起動

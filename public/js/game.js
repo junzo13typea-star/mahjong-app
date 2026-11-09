@@ -19,12 +19,19 @@
     playerCount: 4,      // 4: 四人麻雀, 3: 三人麻雀 (サンマ)
     matchLength: 'tonpuu', // 'tonpuu': 東風戦, 'hanchan': 半荘戦
     is3D: true,          // 3D立体視点 ON/OFF
+    rules: {
+      akadora: true,     // 赤ドラ (赤5萬・赤5筒・赤5索) あり
+      kuitan: true,      // 食いタン (喰い断) あり
+      kuikae: true       // 喰い替え禁止 あり (true = 禁止する)
+    },
 
     roundWind: '1z',     // '1z': 東場, '2z': 南場
     roundNum: 0,         // 通算局インデックス (0..)
     dealerIdx: 0,        // 親のプレイヤーインデックス
     honba: 0,            // 本場数
     riichiSticks: 0,     // 供託リーチ棒数
+    discardSeq: 0,       // この局の通算打牌数 (天和・地和・ダブルリーチ判定用)
+    kanCount: 0,         // この局のカン回数 (槓ドラ表示牌の参照用)
     wall: [],            // 牌山
     deadWall: [],        // 王牌 (14枚)
     doraIndicators: [],  // 表ドラ表示牌
@@ -36,10 +43,62 @@
     lastDiscarder: -1,   // 直前の打牌者
     pendingActions: null,// アクション待ち状態
     isAssisting: true,   // 待ち牌アシスト表示
-    turnTimer: null      // CPUターンタイマー
+    turnTimer: null,     // CPUターンタイマー
+
+    // 演出用 (視覚・聴覚のみ。対局ロジックには影響しない)
+    justDiscarded: null, // 直近の打牌 { playerIdx, seq, rendered } → 河の登場アニメ用
+    kanDoraFlipPending: false, // 槓ドラが増えた直後の renderBoard でめくりアニメを付ける
+    riichiSticksShown: 0 // 供託表示のポップアニメ判定用 (前回描画時の本数)
   };
 
   let DOM = {};
+
+  // 効果音ヘルパー: sfx.js 未読込・非対応環境では無言で素通りする
+  function sfx(name, arg) {
+    try {
+      if (window.MahjongSfx && typeof window.MahjongSfx.play === 'function') {
+        window.MahjongSfx.play(name, arg);
+      }
+    } catch (e) { /* 効果音の失敗で対局を止めない */ }
+  }
+
+  // 点数カウントアップの世代トークン (閉じたら旧アニメを打ち切る)
+  let scoreCountToken = 0;
+
+  /**
+   * 和了点数を 0 → 確定値まで約0.8秒でカウントアップ表示する。
+   * requestAnimationFrame が無い環境・モーション軽減時は即座に最終値を表示。
+   * 最終値は必ず正確な値で止まる。モーダルを閉じるとトークンで打ち切る。
+   */
+  function animateScoreCount(el, totalPoints) {
+    if (!el) return;
+    const finalText = `${(totalPoints || 0).toLocaleString()} 点`;
+    const token = ++scoreCountToken;
+
+    const reduceMotion = typeof window !== 'undefined' && window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion || typeof requestAnimationFrame !== 'function') {
+      el.textContent = finalText;
+      return;
+    }
+
+    const duration = 800;
+    const target = totalPoints || 0;
+    const start = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    const step = (now) => {
+      if (token !== scoreCountToken) return; // 閉じられた/別の和了に切替
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      el.textContent = `${Math.round(target * eased).toLocaleString()} 点`;
+      if (t < 1) {
+        requestAnimationFrame(step);
+      } else {
+        el.textContent = finalText; // 最終値は必ず正確な値
+      }
+    };
+    requestAnimationFrame(step);
+  }
 
   function cacheDom() {
     DOM = {
@@ -47,6 +106,10 @@
       segPlayerCount: document.getElementById('segPlayerCount'),
       segMatchLength: document.getElementById('segMatchLength'),
       btnToggle3D: document.getElementById('btnToggle3D'),
+      btnRuleAkadora: document.getElementById('btnRuleAkadora'),
+      btnRuleKuitan: document.getElementById('btnRuleKuitan'),
+      btnRuleKuikae: document.getElementById('btnRuleKuikae'),
+      btnSfxToggle: document.getElementById('btnSfxToggle'),
 
       gameRoundName: document.getElementById('gameRoundName'),
       gameHonbaBadge: document.getElementById('gameHonbaBadge'),
@@ -124,13 +187,121 @@
       resultScorePoints: document.getElementById('resultScorePoints'),
       resultScoreRank: document.getElementById('resultScoreRank'),
       resultScoreDetails: document.getElementById('resultScoreDetails'),
-      btnNextRound: document.getElementById('btnNextRound')
+      btnNextRound: document.getElementById('btnNextRound'),
+
+      // カスタム確認ダイアログ
+      confirmModal: document.getElementById('confirmModal'),
+      confirmModalMessage: document.getElementById('confirmModalMessage'),
+      btnConfirmOk: document.getElementById('btnConfirmOk'),
+      btnConfirmCancel: document.getElementById('btnConfirmCancel')
     };
+  }
+
+  // ---------- 設定の保存 / 復元 (localStorage・sfx.js と同じ防御方式) ----------
+  const SETTINGS_KEY = 'mahjong_game_settings_v1';
+
+  function readStoredSettings() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
+      }
+    } catch (e) { /* 保存が無い/読めない環境では既定値を使う */ }
+    return null;
+  }
+
+  function saveSettings() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+          akadora: game.rules.akadora,
+          kuitan: game.rules.kuitan,
+          kuikae: game.rules.kuikae,
+          is3D: game.is3D,
+          playerCount: game.playerCount,
+          matchLength: game.matchLength,
+          isAssisting: game.isAssisting
+        }));
+      }
+    } catch (e) { /* 保存できなくても対局は継続する */ }
+  }
+
+  function applyStoredSettings() {
+    const s = readStoredSettings();
+    if (!s) return;
+    if (typeof s.akadora === 'boolean') game.rules.akadora = s.akadora;
+    if (typeof s.kuitan === 'boolean') game.rules.kuitan = s.kuitan;
+    if (typeof s.kuikae === 'boolean') game.rules.kuikae = s.kuikae;
+    if (typeof s.is3D === 'boolean') game.is3D = s.is3D;
+    if (s.playerCount === 3 || s.playerCount === 4) game.playerCount = s.playerCount;
+    if (s.matchLength === 'tonpuu' || s.matchLength === 'hanchan') game.matchLength = s.matchLength;
+    if (typeof s.isAssisting === 'boolean') game.isAssisting = s.isAssisting;
+  }
+
+  // 復元した設定をコントロール類の表示に反映する
+  function syncSettingsUi() {
+    if (DOM.segPlayerCount) {
+      DOM.segPlayerCount.querySelectorAll('.rule-seg-btn').forEach(b => {
+        b.classList.toggle('active', parseInt(b.getAttribute('data-players'), 10) === game.playerCount);
+      });
+    }
+    if (DOM.segMatchLength) {
+      DOM.segMatchLength.querySelectorAll('.rule-seg-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-length') === game.matchLength);
+      });
+    }
+    if (DOM.btnRuleAkadora) {
+      DOM.btnRuleAkadora.textContent = `赤ドラ: ${game.rules.akadora ? 'ON' : 'OFF'}`;
+      DOM.btnRuleAkadora.classList.toggle('active', game.rules.akadora);
+    }
+    if (DOM.btnRuleKuitan) {
+      DOM.btnRuleKuitan.textContent = `食いタン: ${game.rules.kuitan ? 'ON' : 'OFF'}`;
+      DOM.btnRuleKuitan.classList.toggle('active', game.rules.kuitan);
+    }
+    if (DOM.btnRuleKuikae) {
+      DOM.btnRuleKuikae.textContent = `喰い替え禁止: ${game.rules.kuikae ? 'ON' : 'OFF'}`;
+      DOM.btnRuleKuikae.classList.toggle('active', game.rules.kuikae);
+    }
+    if (DOM.btnToggleAssist) {
+      DOM.btnToggleAssist.textContent = `💡 アシスト: ${game.isAssisting ? 'ON' : 'OFF'}`;
+    }
+    if (DOM.gameAssistBar) {
+      DOM.gameAssistBar.style.display = game.isAssisting ? 'flex' : 'none';
+    }
+    update3DView();
+  }
+
+  // ---------- カスタム確認ダイアログ (ネイティブ confirm の置換) ----------
+  let pendingConfirmAction = null;
+
+  function showConfirmDialog(message, onConfirm) {
+    if (!DOM.confirmModal) {
+      // モーダルが使えない環境向けフォールバック
+      if (typeof confirm === 'function') {
+        if (confirm(message)) onConfirm();
+      } else {
+        onConfirm();
+      }
+      return;
+    }
+    if (DOM.confirmModalMessage) DOM.confirmModalMessage.textContent = message;
+    pendingConfirmAction = onConfirm;
+    DOM.confirmModal.classList.remove('hidden');
+  }
+
+  function closeConfirmDialog() {
+    if (DOM.confirmModal) DOM.confirmModal.classList.add('hidden');
+    pendingConfirmAction = null;
   }
 
   function init() {
     cacheDom();
+    applyStoredSettings();
     setupEvents();
+    syncSettingsUi();
     game.isInitialized = true;
     startNewGame();
   }
@@ -145,6 +316,7 @@
           DOM.segPlayerCount.querySelectorAll('.rule-seg-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           game.playerCount = count;
+          saveSettings();
           startNewGame();
         });
       });
@@ -159,6 +331,7 @@
           DOM.segMatchLength.querySelectorAll('.rule-seg-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           game.matchLength = len;
+          saveSettings();
           startNewGame();
         });
       });
@@ -169,15 +342,87 @@
       DOM.btnToggle3D.addEventListener('click', () => {
         game.is3D = !game.is3D;
         update3DView();
+        saveSettings();
       });
     }
 
-    // 新規対局ボタン
+    // 4. ルール: 赤ドラ ON/OFF (牌山の構成が変わるため新規対局で反映)
+    if (DOM.btnRuleAkadora) {
+      DOM.btnRuleAkadora.addEventListener('click', () => {
+        game.rules.akadora = !game.rules.akadora;
+        DOM.btnRuleAkadora.textContent = `赤ドラ: ${game.rules.akadora ? 'ON' : 'OFF'}`;
+        DOM.btnRuleAkadora.classList.toggle('active', game.rules.akadora);
+        saveSettings();
+        startNewGame();
+        showGameToast(`赤ドラ ${game.rules.akadora ? 'ON' : 'OFF'} で新規対局を開始しました`);
+      });
+    }
+
+    // 5. ルール: 食いタン ON/OFF (点数計算に即時反映)
+    if (DOM.btnRuleKuitan) {
+      DOM.btnRuleKuitan.addEventListener('click', () => {
+        game.rules.kuitan = !game.rules.kuitan;
+        DOM.btnRuleKuitan.textContent = `食いタン: ${game.rules.kuitan ? 'ON' : 'OFF'}`;
+        DOM.btnRuleKuitan.classList.toggle('active', game.rules.kuitan);
+        saveSettings();
+        showGameToast(`食いタン ${game.rules.kuitan ? 'ON (喰い断あり)' : 'OFF (門前のみ断幺九)'}`);
+      });
+    }
+
+    // 6. ルール: 喰い替え禁止 ON/OFF (鳴き直後の打牌制限に即時反映)
+    if (DOM.btnRuleKuikae) {
+      DOM.btnRuleKuikae.addEventListener('click', () => {
+        game.rules.kuikae = !game.rules.kuikae;
+        DOM.btnRuleKuikae.textContent = `喰い替え禁止: ${game.rules.kuikae ? 'ON' : 'OFF'}`;
+        DOM.btnRuleKuikae.classList.toggle('active', game.rules.kuikae);
+        saveSettings();
+        showGameToast(`喰い替え禁止 ${game.rules.kuikae ? 'ON' : 'OFF (制限なし)'}`);
+      });
+    }
+
+    // 6.5 効果音 ON/OFF (状態は sfx.js が localStorage に保存)
+    if (DOM.btnSfxToggle) {
+      const syncSfxBtn = () => {
+        const isMuted = window.MahjongSfx && typeof window.MahjongSfx.isMuted === 'function'
+          ? window.MahjongSfx.isMuted() : false;
+        DOM.btnSfxToggle.textContent = isMuted ? '🔇 サウンド: OFF' : '🔊 サウンド: ON';
+        DOM.btnSfxToggle.classList.toggle('active', !isMuted);
+      };
+      syncSfxBtn();
+      DOM.btnSfxToggle.addEventListener('click', () => {
+        if (window.MahjongSfx && typeof window.MahjongSfx.toggleMuted === 'function') {
+          window.MahjongSfx.toggleMuted();
+        }
+        syncSfxBtn();
+        const isMutedNow = window.MahjongSfx && window.MahjongSfx.isMuted();
+        showGameToast(isMutedNow ? '効果音 OFF' : '効果音 ON');
+        if (!isMutedNow) sfx('click');
+      });
+    }
+
+    // 新規対局ボタン (カスタム確認ダイアログで確認してからリセット)
     if (DOM.btnNewGame) {
       DOM.btnNewGame.addEventListener('click', () => {
-        if (confirm('現在の対局をリセットして新規対局を開始しますか？')) {
-          startNewGame();
-        }
+        showConfirmDialog('現在の対局をリセットして新規対局を開始しますか？', startNewGame);
+      });
+    }
+
+    // 確認ダイアログのボタン配線 (キャンセルでは何も起きない)
+    if (DOM.btnConfirmOk) {
+      DOM.btnConfirmOk.addEventListener('click', () => {
+        const action = pendingConfirmAction;
+        closeConfirmDialog();
+        if (action) action();
+      });
+    }
+    if (DOM.btnConfirmCancel) {
+      DOM.btnConfirmCancel.addEventListener('click', () => {
+        closeConfirmDialog();
+      });
+    }
+    if (DOM.confirmModal) {
+      DOM.confirmModal.addEventListener('click', (e) => {
+        if (e && e.target === DOM.confirmModal) closeConfirmDialog();
       });
     }
 
@@ -187,6 +432,7 @@
         game.isAssisting = !game.isAssisting;
         DOM.btnToggleAssist.textContent = `💡 アシスト: ${game.isAssisting ? 'ON' : 'OFF'}`;
         DOM.gameAssistBar.style.display = game.isAssisting ? 'flex' : 'none';
+        saveSettings();
         if (game.isAssisting) updatePlayerAssist();
       });
     }
@@ -277,8 +523,14 @@
       isRiichi: false,
       isDoubleRiichi: false,
       ippatsu: false,
+      ippatsuDeclarationPending: false, // リーチ宣言直後で宣言打牌がまだ済んでいない
       isMenzen: true,
-      furiten: false
+      furiten: false,
+      tempFuriten: false,      // 同巡内見逃しフリテン (自分の次のツモまで)
+      riichiFuriten: false,    // リーチ後見逃しフリテン (その局ずっと)
+      discardCount: 0,         // この局の自分の打牌数 (ダブルリーチ判定用)
+      kuikaeForbidden: null,   // 喰い替え禁止中の牌 (正規化済みコードの配列, 1打牌のみ有効)
+      lastDrawWasRinshan: false // 直前のツモが嶺上牌かどうか
     };
   }
 
@@ -301,9 +553,18 @@
       game.players[i].isRiichi = false;
       game.players[i].isDoubleRiichi = false;
       game.players[i].ippatsu = false;
+      game.players[i].ippatsuDeclarationPending = false;
       game.players[i].isMenzen = true;
       game.players[i].furiten = false;
+      game.players[i].tempFuriten = false;
+      game.players[i].riichiFuriten = false;
+      game.players[i].discardCount = 0;
+      game.players[i].kuikaeForbidden = null;
+      game.players[i].lastDrawWasRinshan = false;
     }
+
+    game.discardSeq = 0;
+    game.kanCount = 0;
 
     // 牌山生成（3人麻雀は萬子の2〜8を除外）
     buildWall();
@@ -350,9 +611,9 @@
 
     baseTiles.forEach(tile => {
       for (let i = 0; i < 4; i++) {
-        if (!isSanma && tile === '5m' && i === 0) wall.push('5mr');
-        else if (tile === '5p' && i === 0) wall.push('5pr');
-        else if (tile === '5s' && i === 0) wall.push('5sr');
+        if (game.rules.akadora && !isSanma && tile === '5m' && i === 0) wall.push('5mr');
+        else if (game.rules.akadora && tile === '5p' && i === 0) wall.push('5pr');
+        else if (game.rules.akadora && tile === '5s' && i === 0) wall.push('5sr');
         else wall.push(tile);
       }
     });
@@ -387,10 +648,13 @@
     game.lastDrawnTile = drawnTile;
     const player = game.players[playerIdx];
     player.tsumoTile = drawnTile;
+    player.lastDrawWasRinshan = false;
+    player.tempFuriten = false; // 同巡内見逃しフリテンは自分のツモで解除
 
     renderBoard();
 
     if (playerIdx === 0) {
+      sfx('select'); // 自分のツモ: 軽いクリック音
       updatePlayerAssist();
       checkPlayerTsumoActions(drawnTile);
       return;
@@ -422,7 +686,8 @@
           seatWind: player.seatWind,
           doraCount: countDora(fullHand, game.doraIndicators),
           uraDoraCount: player.isRiichi ? countDora(fullHand, game.uraDoraIndicators) : 0,
-          honba: game.honba
+          honba: game.honba,
+          ...buildSituationalOptions(player, true)
         }
       });
 
@@ -440,8 +705,11 @@
       }
     }
 
-    // カン判定
-    if (!player.isRiichi && canAnkan(fullHand)) {
+    // カン判定 (暗槓・加槓)。リーチ後は暗槓のみ可
+    const kanOptions = getKanOptions(player, fullHand);
+    const kanAvailable = kanOptions.length > 0 &&
+      (!player.isRiichi || kanOptions.some(o => o.kind === 'ankan'));
+    if (kanAvailable) {
       DOM.btnActionKan.style.display = 'inline-block';
       hasActions = true;
     }
@@ -480,6 +748,127 @@
     return Object.values(counts).some(c => c === 4);
   }
 
+  // 可能なカン (暗槓・加槓) の一覧
+  function getKanOptions(player, fullHand) {
+    const options = [];
+    const counts = {};
+    fullHand.forEach(t => {
+      const raw = normTileCode(t);
+      counts[raw] = (counts[raw] || 0) + 1;
+    });
+    Object.keys(counts).forEach(raw => {
+      if (counts[raw] === 4) options.push({ kind: 'ankan', tile: raw });
+    });
+    player.melds.forEach(m => {
+      if (m.type === 'pon') {
+        const raw = normTileCode(m.tiles[0]);
+        if (counts[raw] >= 1) options.push({ kind: 'kakan', tile: raw });
+      }
+    });
+    return options;
+  }
+
+  // 槓ドラ表示牌を追加する (表・裏とも次の表示牌へ)
+  function addKanDora() {
+    game.kanCount += 1;
+    const ind = game.deadWall[4 + game.kanCount];
+    if (ind) {
+      game.doraIndicators.push(ind);
+      game.kanDoraFlipPending = true; // 次回 renderBoard で新規表示牌にめくりアニメ
+    }
+    const ura = game.deadWall[9 + game.kanCount];
+    if (ura) game.uraDoraIndicators.push(ura);
+  }
+
+  // 嶺上牌を王牌から引く (王牌14枚を維持するため牌山の最後尾から補充)
+  function drawRinshanTile() {
+    if (game.deadWall.length === 0) return null;
+    const tile = game.deadWall.pop();
+    if (game.wall.length > 0) {
+      game.deadWall.push(game.wall.pop());
+    }
+    return tile;
+  }
+
+  // カン成立後の共通処理: 槓ドラ → 嶺上ツモ → ツモフェーズへ戻る
+  function afterPlayerKan(player) {
+    // 自分のカンで一発は消滅する (嶺上開花とは複合しない)
+    player.ippatsu = false;
+    player.ippatsuDeclarationPending = false;
+
+    addKanDora();
+
+    const rinshan = drawRinshanTile();
+    game.currentTurn = player.idx;
+    if (!rinshan) {
+      renderBoard();
+      return;
+    }
+    player.tsumoTile = rinshan;
+    player.lastDrawWasRinshan = true;
+    game.lastDrawnTile = rinshan;
+
+    renderBoard();
+    updatePlayerAssist();
+    checkPlayerTsumoActions(rinshan);
+  }
+
+  // プレイヤーの暗槓・加槓 (ツモフェーズ)
+  function executePlayerKan() {
+    const player = game.players[0];
+    const fullHand = [...player.hand, player.tsumoTile].filter(t => t !== null && t !== undefined);
+    const options = getKanOptions(player, fullHand)
+      .filter(o => !player.isRiichi || o.kind === 'ankan');
+    if (options.length === 0) return;
+    const opt = options.find(o => o.kind === 'ankan') || options[0];
+
+    if (opt.kind === 'ankan') {
+      const kanTiles = fullHand.filter(t => normTileCode(t) === opt.tile);
+      player.hand = fullHand.filter(t => normTileCode(t) !== opt.tile);
+      player.melds.push({ type: 'ankan', tiles: kanTiles });
+      showGameToast('暗槓（アンカン）！', 'blue');
+    } else {
+      // 加槓: ポンの刻子に手牌 (またはツモ牌) の1枚を加える
+      const meld = player.melds.find(m => m.type === 'pon' && normTileCode(m.tiles[0]) === opt.tile);
+      const idx = fullHand.findIndex(t => normTileCode(t) === opt.tile);
+      const added = fullHand[idx];
+      const remain = [...fullHand];
+      remain.splice(idx, 1);
+      player.hand = remain;
+      meld.type = 'kan';
+      meld.tiles = [...meld.tiles, added];
+      showGameToast('加槓（カカン）！', 'blue');
+    }
+    player.tsumoTile = null;
+
+    afterPlayerKan(player);
+  }
+
+  // プレイヤーの明槓 (他家の打牌を鳴く)
+  function executePlayerMinkan(tile) {
+    const player = game.players[0];
+    const raw = normTileCode(tile);
+    const removed = [];
+
+    for (let i = player.hand.length - 1; i >= 0 && removed.length < 3; i--) {
+      if (normTileCode(player.hand[i]) === raw) {
+        removed.push(player.hand.splice(i, 1)[0]);
+      }
+    }
+    if (removed.length < 3) return; // 安全策 (通常は到達しない)
+
+    player.melds.push({ type: 'kan', tiles: [...removed, tile] });
+    player.isMenzen = false;
+
+    // 鳴きが入ると全員の一発は消滅する
+    game.players.forEach(p => { p.ippatsu = false; p.ippatsuDeclarationPending = false; });
+
+    showGameToast('カン（明槓）！', 'blue');
+    game.currentTurn = 0;
+
+    afterPlayerKan(player);
+  }
+
   function cpuExecuteTurn(playerIdx, drawnTile) {
     const cpu = game.players[playerIdx];
     const fullHand = [...cpu.hand, drawnTile];
@@ -499,7 +888,8 @@
           seatWind: cpu.seatWind,
           doraCount: countDora(fullHand, game.doraIndicators),
           uraDoraCount: cpu.isRiichi ? countDora(fullHand, game.uraDoraIndicators) : 0,
-          honba: game.honba
+          honba: game.honba,
+          ...buildSituationalOptions(cpu, true)
         }
       });
 
@@ -522,19 +912,23 @@
       discardTile = drawnTile;
       isTsumogiri = true;
     } else {
-      discardTile = chooseCpuBestDiscard(fullHand, cpu.melds.length);
+      discardTile = chooseCpuBestDiscard(fullHand, cpu.melds.length, cpu.kuikaeForbidden);
       isTsumogiri = (discardTile === drawnTile);
     }
 
     handleDiscardTile(playerIdx, discardTile, isTsumogiri);
   }
 
-  function chooseCpuBestDiscard(hand14, meldCount) {
+  function chooseCpuBestDiscard(hand14, meldCount, forbiddenTiles) {
     let minShanten = 99;
     const candidates = [];
     const uniqueTiles = [...new Set(hand14)];
+    // 喰い替え禁止の牌は候補から外す (全て禁止の場合のみ例外的に許可)
+    const forbidden = (game.rules.kuikae && Array.isArray(forbiddenTiles)) ? forbiddenTiles : [];
+    const allowedTiles = uniqueTiles.filter(t => !forbidden.includes(normTileCode(t)));
+    const targetTiles = allowedTiles.length > 0 ? allowedTiles : uniqueTiles;
 
-    uniqueTiles.forEach(t => {
+    targetTiles.forEach(t => {
       const remain = [...hand14];
       remain.splice(remain.indexOf(t), 1);
       const s = window.calculateShanten ? window.calculateShanten(remain, meldCount) : 99;
@@ -565,18 +959,30 @@
     const player = game.players[playerIdx];
     player.isRiichi = true;
     player.ippatsu = true;
+    player.ippatsuDeclarationPending = true; // 宣言打牌で消費する (P1-6)
+    if (player.discardCount === 0) {
+      player.isDoubleRiichi = true; // 自分の最初の打牌でのリーチ宣言
+    }
     player.score -= 1000;
     game.riichiSticks += 1;
 
+    sfx('riichi');
     showGameToast(`${player.name} が立直（リーチ）！`, 'gold');
     renderBoard();
   }
 
   function handleDiscardTile(playerIdx, tile, isTsumogiri) {
+    const player = game.players[playerIdx];
+
+    // 喰い替え禁止: 鳴き直後の1打牌だけ、指定牌は切れない (プレイヤーのみブロック)
+    if (playerIdx === 0 && game.rules.kuikae && player.kuikaeForbidden &&
+        player.kuikaeForbidden.includes(normTileCode(tile))) {
+      showGameToast('喰い替え禁止の牌です（鳴いた形と同じになる牌は切れません）', 'orange');
+      return;
+    }
+
     clearTimeout(game.turnTimer);
     hideActionBar();
-
-    const player = game.players[playerIdx];
 
     if (isTsumogiri && player.tsumoTile === tile) {
       player.tsumoTile = null;
@@ -598,8 +1004,28 @@
       isTsumogiri
     });
 
+    player.discardCount += 1;
+    game.discardSeq += 1;
+
+    // 喰い替え制限はこの1打牌で解除される
+    player.kuikaeForbidden = null;
+
+    // 一発の寿命 (P1-6): 宣言打牌では消えず、宣言者の「次の打牌」で消える。
+    // 他家の打牌やターンの進行では消えない (鳴きが入った場合は鳴き側で消す)。
+    if (player.ippatsu) {
+      if (player.ippatsuDeclarationPending) {
+        player.ippatsuDeclarationPending = false;
+      } else {
+        player.ippatsu = false;
+      }
+    }
+
     game.lastDiscardedTile = tile;
     game.lastDiscarder = playerIdx;
+
+    // 演出: 河の最新牌に登場アニメを付けるための印 + 打牌音
+    game.justDiscarded = { playerIdx, seq: game.discardSeq, rendered: false };
+    sfx('discard');
 
     renderBoard();
     if (playerIdx === 0) updatePlayerAssist();
@@ -632,11 +1058,12 @@
     let canRon = false;
     let canPon = false;
     let canChi = false;
+    let canKan = false;
 
-    // ロン判定
+    // ロン判定 (フリテンの場合は不可)
     const testHand = [...player.hand, tile];
     const s = window.calculateShanten ? window.calculateShanten(testHand, player.melds.length) : 99;
-    if (s === -1 && !player.furiten) {
+    if (s === -1 && !isFuritenNow(player)) {
       const scoreRes = calcScoreSafe({
         hand: player.hand,
         winTile: tile,
@@ -650,7 +1077,8 @@
           seatWind: player.seatWind,
           doraCount: countDora(testHand, game.doraIndicators),
           uraDoraCount: player.isRiichi ? countDora(testHand, game.uraDoraIndicators) : 0,
-          honba: game.honba
+          honba: game.honba,
+          ...buildSituationalOptions(player, false)
         }
       });
       if (scoreRes && scoreRes.han >= 1) canRon = true;
@@ -661,6 +1089,7 @@
       const raw = window.normalizeTile ? window.normalizeTile(tile) : tile;
       const sameCount = player.hand.filter(t => (window.normalizeTile ? window.normalizeTile(t) : t) === raw).length;
       if (sameCount >= 2) canPon = true;
+      if (sameCount >= 3) canKan = true; // 明槓
 
       // 4人麻雀の上家からのみチー可能 (3人麻雀はチー禁止)
       if (game.playerCount === 4 && discarderIdx === 3 && raw[1] !== 'z') {
@@ -668,10 +1097,11 @@
       }
     }
 
-    if (canRon || canPon || canChi) {
+    if (canRon || canPon || canChi || canKan) {
       if (canRon) DOM.btnActionRon.style.display = 'inline-block';
       if (canPon) DOM.btnActionPon.style.display = 'inline-block';
       if (canChi) DOM.btnActionChi.style.display = 'inline-block';
+      if (canKan) DOM.btnActionKan.style.display = 'inline-block';
       DOM.btnActionPass.style.display = 'inline-block';
       DOM.gameActionBar.style.display = 'flex';
 
@@ -681,7 +1111,8 @@
         tile,
         canRon,
         canPon,
-        canChi
+        canChi,
+        canKan
       };
       return true;
     }
@@ -703,7 +1134,7 @@
   function checkCpuRon(cpu, tile) {
     const testHand = [...cpu.hand, tile];
     const s = window.calculateShanten ? window.calculateShanten(testHand, cpu.melds.length) : 99;
-    if (s === -1) {
+    if (s === -1 && !isFuritenNow(cpu)) {
       const scoreRes = calcScoreSafe({
         hand: cpu.hand,
         winTile: tile,
@@ -717,7 +1148,8 @@
           seatWind: cpu.seatWind,
           doraCount: countDora(testHand, game.doraIndicators),
           uraDoraCount: cpu.isRiichi ? countDora(testHand, game.uraDoraIndicators) : 0,
-          honba: game.honba
+          honba: game.honba,
+          ...buildSituationalOptions(cpu, false)
         }
       });
       if (scoreRes && scoreRes.han >= 1) {
@@ -729,7 +1161,7 @@
   }
 
   function proceedToNextTurn() {
-    game.players.forEach(p => { p.ippatsu = false; });
+    // ※ 一発はここでは消さない (宣言者の打牌ライフサイクルで管理する: P1-6)
 
     if (game.wall.length === 0) {
       handleRyukyoku();
@@ -749,7 +1181,16 @@
     if (!pending) return;
 
     if (action === 'pass') {
-      if (pending.type === 'discard') proceedToNextTurn();
+      if (pending.type === 'discard') {
+        // ロンを見逃した場合はフリテンになる
+        if (pending.canRon) {
+          const player = game.players[0];
+          if (player.isRiichi) player.riichiFuriten = true; // その局ずっと
+          else player.tempFuriten = true;                    // 自分の次のツモまで
+          player.furiten = true;
+        }
+        proceedToNextTurn();
+      }
       return;
     }
 
@@ -769,7 +1210,8 @@
           seatWind: player.seatWind,
           doraCount: countDora(fullHand, game.doraIndicators),
           uraDoraCount: player.isRiichi ? countDora(fullHand, game.uraDoraIndicators) : 0,
-          honba: game.honba
+          honba: game.honba,
+          ...buildSituationalOptions(player, true)
         }
       });
       handleAgari(0, -1, player.tsumoTile, true, scoreRes);
@@ -792,7 +1234,8 @@
           seatWind: player.seatWind,
           doraCount: countDora(fullHand, game.doraIndicators),
           uraDoraCount: player.isRiichi ? countDora(fullHand, game.uraDoraIndicators) : 0,
-          honba: game.honba
+          honba: game.honba,
+          ...buildSituationalOptions(player, false)
         }
       });
       handleAgari(0, pending.discarderIdx, pending.tile, false, scoreRes);
@@ -813,6 +1256,15 @@
       executePlayerChi(pending.tile);
       return;
     }
+
+    if (action === 'kan') {
+      if (pending.type === 'tsumo') {
+        executePlayerKan();
+      } else if (pending.type === 'discard' && pending.canKan) {
+        executePlayerMinkan(pending.tile);
+      }
+      return;
+    }
   }
 
   function executePlayerPon(tile) {
@@ -829,6 +1281,12 @@
 
     player.melds.push({ type: 'pon', tiles: [...removed, tile] });
     player.isMenzen = false;
+
+    // 鳴きが入ると全員の一発は消滅する
+    game.players.forEach(p => { p.ippatsu = false; p.ippatsuDeclarationPending = false; });
+
+    // 喰い替え禁止: 鳴いた牌と同種の牌は次の打牌で切れない
+    if (game.rules.kuikae) player.kuikaeForbidden = [raw];
 
     showGameToast('ポン！', 'blue');
     renderBoard();
@@ -856,6 +1314,20 @@
       player.melds.push({ type: 'chi', tiles: [pair[0], tile, pair[1]] });
       player.isMenzen = false;
 
+      // 鳴きが入ると全員の一発は消滅する
+      game.players.forEach(p => { p.ippatsu = false; p.ippatsuDeclarationPending = false; });
+
+      // 喰い替え禁止: 鳴いた牌そのものと、反対側で同じ順子になる牌は次の打牌で切れない
+      // 例: 3・4 で 2 をチー → 2 と 5 が禁止 / 4・5 で 6 をチー → 6 と 3 が禁止
+      if (game.rules.kuikae) {
+        const handNums = pair.map(t => parseInt(normTileCode(t)[0], 10));
+        const low = Math.min(...handNums, num);
+        const forbidden = [raw];
+        if (num === low && low + 3 <= 9) forbidden.push(`${low + 3}${suit}`);
+        else if (num === low + 2 && low - 1 >= 1) forbidden.push(`${low - 1}${suit}`);
+        player.kuikaeForbidden = forbidden;
+      }
+
       showGameToast('チー！', 'blue');
       renderBoard();
       game.currentTurn = 0;
@@ -865,21 +1337,28 @@
 
   function handleAgari(winnerIdx, loserIdx, winTile, isTsumo, scoreRes) {
     const winner = game.players[winnerIdx];
-    const totalPoints = scoreRes.points || (scoreRes.han >= 5 ? 8000 : 3900);
+    // calculateScore の返却形式: points = { total, ron, oyaTsumo, koTsumo, honbaBonus }
+    // oyaTsumo / koTsumo は「1人あたりの支払額」(本場分込み)、ron は本場込み総額
+    const pts = (scoreRes && scoreRes.points && typeof scoreRes.points === 'object')
+      ? scoreRes.points
+      : { total: 0, ron: 0, oyaTsumo: 0, koTsumo: 0, honbaBonus: 0 };
+    const sticksBonus = game.riichiSticks * 1000;
 
     if (isTsumo) {
-      const otherCount = game.playerCount - 1;
+      let received = 0;
       game.players.forEach(p => {
-        if (p.idx !== winnerIdx) {
-          const pay = Math.ceil(totalPoints / otherCount / 100) * 100;
-          p.score -= pay;
-        }
+        if (p.idx === winnerIdx) return;
+        // 親ツモは全員 oyaTsumo、子ツモは親が oyaTsumo・子が koTsumo を支払う
+        const pay = (winner.seatWind === '1z' || p.seatWind === '1z')
+          ? pts.oyaTsumo : pts.koTsumo;
+        p.score -= pay;
+        received += pay;
       });
-      winner.score += totalPoints + (game.riichiSticks * 1000);
+      winner.score += received + sticksBonus;
     } else {
       const loser = game.players[loserIdx];
-      loser.score -= totalPoints;
-      winner.score += totalPoints + (game.riichiSticks * 1000);
+      loser.score -= pts.ron;
+      winner.score += pts.ron + sticksBonus;
     }
     game.riichiSticks = 0;
 
@@ -971,16 +1450,36 @@
     game.doraIndicators.forEach(t => DOM.resultDoraTiles.appendChild(createTileDom(t, true)));
 
     DOM.resultYakuList.innerHTML = '';
-    (scoreRes.yaku || []).forEach(y => {
+    (scoreRes.yakuList || []).forEach(y => {
       const li = document.createElement('li');
       li.className = 'yaku-badge-item';
-      li.innerHTML = `<span class="yaku-name">${y.name}</span><span class="yaku-han">${y.han}翻</span>`;
+      li.innerHTML = `<span class="yaku-name">${y.name}</span><span class="yaku-han">${y.isYakuman ? '役満' : `${y.han}翻`}</span>`;
       DOM.resultYakuList.appendChild(li);
     });
 
-    DOM.resultScorePoints.textContent = `${(scoreRes.points || 0).toLocaleString()} 点`;
-    DOM.resultScoreRank.textContent = scoreRes.rank || '和了';
-    DOM.resultScoreDetails.textContent = `${scoreRes.han || 0}翻 ${scoreRes.fu || 0}符 (本場加算含む)`;
+    // 点数は 0 → 確定値へカウントアップ表示 (最終値は必ず正確な値で止まる)
+    animateScoreCount(DOM.resultScorePoints, scoreRes.totalPoints || 0);
+    DOM.resultScoreRank.textContent = scoreRes.rankTitle || '和了';
+    DOM.resultScoreDetails.textContent = scoreRes.isYakuman
+      ? `${scoreRes.rankTitle || '役満'} (本場加算含む)`
+      : `${scoreRes.han || 0}翻 ${scoreRes.fu || 0}符 (本場加算含む)`;
+
+    // 演出: ランクバッジをスケールインさせる (クラス付け直しで毎回再生)
+    if (DOM.resultScoreRank) {
+      DOM.resultScoreRank.classList.remove('rank-pop');
+      void DOM.resultScoreRank.offsetWidth; // リフローでアニメをリスタート
+      DOM.resultScoreRank.classList.add('rank-pop');
+    }
+
+    // 演出: 画面フラッシュ + 役満時は金色の強い演出 (光線)
+    DOM.gameResultModal.classList.remove('agari-flash', 'yakuman-mode');
+    void DOM.gameResultModal.offsetWidth;
+    DOM.gameResultModal.classList.add('agari-flash');
+    if (scoreRes.isYakuman) DOM.gameResultModal.classList.add('yakuman-mode');
+    const modalEl = DOM.gameResultModal;
+    setTimeout(() => { if (modalEl) modalEl.classList.remove('agari-flash'); }, 900);
+
+    sfx('agari', !!scoreRes.isYakuman);
 
     DOM.gameResultModal.classList.remove('hidden');
   }
@@ -1028,7 +1527,11 @@
   }
 
   function closeResultModal() {
-    if (DOM.gameResultModal) DOM.gameResultModal.classList.add('hidden');
+    scoreCountToken++; // 進行中のカウントアップを打ち切る (閉じた後に書き換えない)
+    if (DOM.gameResultModal) {
+      DOM.gameResultModal.classList.add('hidden');
+      DOM.gameResultModal.classList.remove('agari-flash', 'yakuman-mode');
+    }
     if (DOM.btnNextRound) DOM.btnNextRound.textContent = '次の局へ進む';
   }
 
@@ -1038,15 +1541,30 @@
     if (DOM.gameRoundName) DOM.gameRoundName.textContent = currentRoundLabel;
     if (DOM.centerRoundText) DOM.centerRoundText.textContent = currentRoundLabel;
     if (DOM.gameHonbaBadge) DOM.gameHonbaBadge.textContent = `${game.honba}本場`;
-    if (DOM.gameRiichiSticks) DOM.gameRiichiSticks.textContent = `供託: ${game.riichiSticks * 1000}点`;
+    if (DOM.gameRiichiSticks) {
+      DOM.gameRiichiSticks.textContent = `供託: ${game.riichiSticks * 1000}点`;
+      // 演出: リーチ棒 (供託) が増えた瞬間だけバッジを弾ませる
+      if (game.riichiSticks > game.riichiSticksShown) {
+        DOM.gameRiichiSticks.classList.add('stick-pop');
+        const sticksEl = DOM.gameRiichiSticks;
+        setTimeout(() => { if (sticksEl) sticksEl.classList.remove('stick-pop'); }, 700);
+      }
+      game.riichiSticksShown = game.riichiSticks;
+    }
     if (DOM.gameRemainingWall) DOM.gameRemainingWall.textContent = game.wall.length;
 
-    // ドラ表示牌
+    // ドラ表示牌 (カンで増えた分も含め全て表示)
     if (DOM.gameDoraTile) {
       DOM.gameDoraTile.innerHTML = '';
-      if (game.doraIndicators[0]) {
-        DOM.gameDoraTile.appendChild(createTileDom(game.doraIndicators[0], false));
-      }
+      game.doraIndicators.forEach((ind, i) => {
+        const indEl = createTileDom(ind, true);
+        // 演出: 槓ドラで増えた最新表示牌だけ「めくり」アニメを付ける
+        if (game.kanDoraFlipPending && i === game.doraIndicators.length - 1) {
+          indEl.classList.add('dora-flip-in');
+        }
+        DOM.gameDoraTile.appendChild(indEl);
+      });
+      game.kanDoraFlipPending = false;
     }
 
     // ターン表示
@@ -1099,7 +1617,8 @@
     player.hand.forEach(tile => {
       const tileEl = createTileDom(tile, false);
       tileEl.addEventListener('click', () => {
-        if (game.currentTurn === 0 && !player.isRiichi) {
+        // リーチ中はツモ切りのみ。ただし宣言直後 (宣言打牌前) は手牌からも切れる
+        if (game.currentTurn === 0 && (!player.isRiichi || player.ippatsuDeclarationPending)) {
           handleDiscardTile(0, tile, false);
         }
       });
@@ -1148,9 +1667,17 @@
     if (!player) return;
     container.innerHTML = '';
 
-    player.kawa.forEach(item => {
+    player.kawa.forEach((item, i) => {
       const tileEl = createTileDom(item.tile, true);
       if (item.isRiichi) tileEl.classList.add('is-riichi-tile');
+      // 演出: 打たれた直後の最新牌だけ、打牌者の方向から滑り込む登場アニメを付ける
+      // (renderBoard の再構築方式に合わせたクラス方式。初回描画時のみ・再生は1回だけ)
+      const jd = game.justDiscarded;
+      if (jd && !jd.rendered && jd.playerIdx === playerIdx && i === player.kawa.length - 1) {
+        tileEl.classList.add('kawa-just-placed', `kawa-drop-${playerIdx}`);
+        if (item.isRiichi) tileEl.classList.add('riichi-declare-drop');
+        jd.rendered = true;
+      }
       container.appendChild(tileEl);
     });
   }
@@ -1172,8 +1699,17 @@
       DOM.gameAssistShanten.style.background = '#10b981';
 
       if (window.analyzeWaits) {
-        const waits = window.analyzeWaits(player.hand, player.melds);
-        DOM.gameAssistWaits.innerHTML = '待ち牌: ' + waits.map(w => `<span class="assist-wait-chip">${w.name} (${w.leftCount}枚)</span>`).join(' ');
+        const waitRes = window.analyzeWaits(player.hand, player.melds.length);
+        const waits = (waitRes && Array.isArray(waitRes.waits)) ? waitRes.waits : [];
+        if (waits.length > 0) {
+          DOM.gameAssistWaits.innerHTML = '待ち牌: ' + waits.map(w => {
+            const def = window.TILE_DEFS ? window.TILE_DEFS[w.tile] : null;
+            const label = def ? def.label : w.tile;
+            return `<span class="assist-wait-chip">${label} (${w.remaining}枚)</span>`;
+          }).join(' ');
+        } else {
+          DOM.gameAssistWaits.textContent = '待ち牌: なし';
+        }
       }
     } else {
       DOM.gameAssistShanten.textContent = `${shanten} 向聴（シャンテン）`;
@@ -1203,12 +1739,27 @@
   function calcScoreSafe(input) {
     if (window.calculateScore) {
       try {
-        return window.calculateScore(input);
+        const merged = {
+          ...input,
+          options: { kuitan: game.rules.kuitan, ...(input.options || {}) }
+        };
+        return window.calculateScore(merged);
       } catch (err) {
         console.error('Score calculation error:', err);
       }
     }
-    return { points: 8000, han: 4, fu: 40, rank: '満貫', yaku: [{ name: '満貫', han: 4 }] };
+    // フォールバックも calculateScore と同じ返却形式にそろえる
+    return {
+      isAgari: true,
+      isYakuman: false,
+      rankTitle: '満貫',
+      yakuList: [{ name: '満貫', han: 4 }],
+      han: 4,
+      fu: 40,
+      totalPoints: 8000,
+      points: { total: 8000, ron: 8000, oyaTsumo: 4000, koTsumo: 2000, honbaBonus: 0 },
+      honbaBonus: 0
+    };
   }
 
   function countDora(tiles, indicators) {
@@ -1218,8 +1769,11 @@
       tiles.forEach(t => {
         const raw = window.normalizeTile ? window.normalizeTile(t) : t;
         if (raw === target) count++;
-        if (t.endsWith('r')) count++;
       });
+    });
+    // 赤ドラは表示牌の枚数に関わらず1枚につき1つ
+    tiles.forEach(t => {
+      if (t.endsWith('r')) count++;
     });
     return count;
   }
@@ -1239,10 +1793,68 @@
     return `${(num % 9) + 1}${suit}`;
   }
 
+  function normTileCode(t) {
+    return window.normalizeTile ? window.normalizeTile(t) : t;
+  }
+
+  /**
+   * 状況役の options を組み立てる (ダブルリーチ / 海底 / 河底 / 嶺上 / 天和・地和)
+   * 一発は player.ippatsu がそのまま options.isIppatsu として各呼び出し側で渡される
+   */
+  function buildSituationalOptions(player, isTsumo) {
+    const opts = { isDoubleRiichi: !!player.isDoubleRiichi };
+    if (isTsumo) {
+      opts.isRinshan = !!player.lastDrawWasRinshan;
+      opts.isHaitei = !player.lastDrawWasRinshan && game.wall.length === 0;
+      if (game.discardSeq === 0) {
+        // 誰も打牌していない最初のツモ和了
+        if (player.seatWind === '1z') opts.isTenhou = true;
+        else opts.isChiihou = true;
+      }
+    } else {
+      opts.isHoutei = game.wall.length === 0;
+    }
+    return opts;
+  }
+
+  /**
+   * テンパイ時の待ち牌一覧 (正規化済みコード)。テンパイでなければ空配列
+   */
+  function getWaitTiles(player) {
+    if (!window.analyzeWaits) return [];
+    const res = window.analyzeWaits(player.hand, player.melds.length);
+    if (!res || !res.isTenpai || !Array.isArray(res.waits)) return [];
+    return res.waits.map(w => w.tile);
+  }
+
+  /**
+   * 現在フリテンかどうか
+   * (a) 捨て牌フリテン: 自分の河に自分の待ち牌がある
+   * (b) 同巡内見逃しフリテン: tempFuriten (自分の次のツモで解除)
+   * (c) リーチ後見逃しフリテン: riichiFuriten (その局ずっと)
+   */
+  function isFuritenNow(player) {
+    let result = !!(player.tempFuriten || player.riichiFuriten);
+    if (!result) {
+      const waits = getWaitTiles(player);
+      if (waits.length > 0) {
+        const kawaSet = new Set(player.kawa.map(k => normTileCode(k.tile)));
+        result = waits.some(w => kawaSet.has(w));
+      }
+    }
+    player.furiten = result; // 旧フラグも同期しておく
+    return result;
+  }
+
   function showGameToast(msg, color = 'green') {
     const toast = document.createElement('div');
     toast.className = `game-toast toast-${color}`;
     toast.textContent = msg;
+    // 読み上げ対応 (疑似DOM等の setAttribute が無い環境では素通り)
+    if (typeof toast.setAttribute === 'function') {
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+    }
     document.body.appendChild(toast);
     setTimeout(() => toast.classList.add('show'), 10);
     setTimeout(() => {

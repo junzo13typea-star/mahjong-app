@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>雀聖AI - 麻雀点数計算・待ち牌ナビ・OCRカメラ認識</title>
   <meta name="description" content="麻雀の点数計算、待ち牌・残り枚数・シャンテン数判定、スマホカメラによる手牌OCR認識をワンストップで実現する本格麻雀ツール">
   <meta name="theme-color" content="#064e3b">
@@ -24,6 +24,7 @@
         </div>
       </div>
       <div class="header-actions">
+        <button id="btnOpenHelp" class="btn-ghost" title="遊び方ヘルプ" aria-label="遊び方ヘルプを開く">❓ 遊び方</button>
         <button id="btnQuickSample" class="btn-ghost" title="サンプル牌姿を入力">🎲 サンプル</button>
         <button id="btnClearHand" class="btn-ghost btn-danger-ghost" title="手牌をリセット">🗑️ 全消去</button>
       </div>
@@ -338,10 +339,16 @@
 
           <!-- カメラ操作コントロール（起動時） -->
           <div id="cameraControls" class="camera-controls hidden">
-            <button id="btnCapturePhoto" class="btn-capture" title="撮影して解析">
+            <button id="btnCapturePhoto" class="btn-capture" title="撮影して解析" aria-label="撮影して解析">
               <div class="shutter-inner"></div>
             </button>
             <button id="btnStopCamera" class="btn-sm btn-mat">停止</button>
+          </div>
+
+          <!-- 認識中ローディング表示 -->
+          <div id="ocrLoading" class="ocr-loading hidden" role="status" aria-live="polite">
+            <div class="ocr-spinner" aria-hidden="true"></div>
+            <p class="ocr-loading-text">認識中…</p>
           </div>
 
           <!-- 認識結果プレビュー＆手動修正エリア -->
@@ -576,6 +583,15 @@
             </button>
           </div>
 
+          <!-- ルール設定: 赤ドラ / 食いタン -->
+          <div class="game-settings-bar game-rules-bar">
+            <span class="rules-bar-label">ルール</span>
+            <button id="btnRuleAkadora" class="btn-3d-toggle active" title="赤ドラ（赤5萬・赤5筒・赤5索）の有無を切替（新規対局で反映）">赤ドラ: ON</button>
+            <button id="btnRuleKuitan" class="btn-3d-toggle active" title="食いタン（喰い断幺九）の有無を切替">食いタン: ON</button>
+            <button id="btnRuleKuikae" class="btn-3d-toggle active" title="喰い替え禁止（ポン・チー直後に同じ形になる牌を切れない）の有無を切替">喰い替え禁止: ON</button>
+            <button id="btnSfxToggle" class="btn-3d-toggle active" title="効果音（打牌音・和了ファンファーレなど）の ON/OFF を切替">🔊 サウンド: ON</button>
+          </div>
+
           <div class="game-status-pill">
             <span id="gameRoundName" class="round-name">東1局</span>
             <span id="gameHonbaBadge" class="honba-badge">0本場</span>
@@ -749,7 +765,7 @@
       <div class="modal-card">
         <div class="modal-header">
           <h3 class="modal-title">鳴き（副露）の追加</h3>
-          <button id="btnCloseMeldModal" class="btn-close">×</button>
+          <button id="btnCloseMeldModal" class="btn-close" aria-label="閉じる">×</button>
         </div>
         <div class="modal-body">
           <div class="meld-type-selector">
@@ -817,13 +833,76 @@
       </div>
     </div>
 
+    <!-- 遊び方ヘルプモーダル -->
+    <div id="helpModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
+      <div class="modal-card help-card">
+        <div class="modal-header">
+          <h3 id="helpModalTitle" class="modal-title">❓ 雀聖AIの遊び方</h3>
+          <button id="btnCloseHelp" class="btn-close" aria-label="ヘルプを閉じる">×</button>
+        </div>
+        <div class="modal-body help-body">
+          <section>
+            <h4>🗂️ 5つのタブ</h4>
+            <ul>
+              <li><strong>点数計算</strong>：下の牌パレットをタップして手牌を入力し、和了牌を指定して「点数を計算する」を押すと、役・翻数・符・点数を計算します。ドラ表示牌や場風・自風、本場・供託、状況役も設定できます。</li>
+              <li><strong>待ち牌・向聴</strong>：入力した手牌の向聴数を表示。テンパイすると待ち牌と残り枚数、14枚のときは「何を切る？」の打牌アシストが出ます。</li>
+              <li><strong>CPU対局</strong>：CPU 3人との本格対局（四人／三人、東風戦／半荘戦）。</li>
+              <li><strong>OCRカメラ認識</strong>：カメラ撮影や画像から手牌を自動で読み取り、そのまま点数計算や待ち牌ナビに使えます。誤認識した牌はタップで修正できます。</li>
+              <li><strong>点数早見表</strong>：子・親の点数表と、満貫以上の固定点を確認できます。</li>
+            </ul>
+          </section>
+          <section>
+            <h4>🀄️ CPU対局の流れ</h4>
+            <ul>
+              <li>「CPU対局」タブを開くと、東1局が自動で始まります。</li>
+              <li>自分の番ではツモ牌が手牌の右に表示されます。切りたい牌をタップすると打牌します。</li>
+              <li>ロン・ツモ・リーチ・ポン・チー・カンができる場面ではボタンが表示されます。鳴かないときは「パス」を押してください。</li>
+              <li>和了や流局のあとは結果画面の「次の局へ進む」で続行します。</li>
+              <li>「💡 アシスト」をONにすると、向聴数と待ち牌が常時表示されます。</li>
+            </ul>
+          </section>
+          <section>
+            <h4>⚙️ ルール設定の場所</h4>
+            <ul>
+              <li>対局画面の上部バーで、人数（四人／三人）・対局形式（東風戦／半荘戦）・3D立体視を切り替えます。</li>
+              <li>その下の「ルール」行では、赤ドラ／食いタン／喰い替え禁止／サウンド（効果音）のON・OFFを切り替えます。赤ドラの変更は次の新規対局から反映されます。</li>
+              <li>ルールや3D表示などの設定は自動で保存され、次回開いたときも引き継がれます。</li>
+            </ul>
+          </section>
+        </div>
+        <div class="modal-footer">
+          <button id="btnCloseHelpFooter" class="btn-primary">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- カスタム確認ダイアログ -->
+    <div id="confirmModal" class="modal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmModalMessage">
+      <div class="modal-card confirm-card">
+        <div class="modal-header">
+          <h3 class="modal-title">確認</h3>
+        </div>
+        <div class="modal-body">
+          <p id="confirmModalMessage" class="confirm-message"></p>
+        </div>
+        <div class="modal-footer">
+          <button id="btnConfirmCancel" class="btn-outline">キャンセル</button>
+          <button id="btnConfirmOk" class="btn-primary">OK</button>
+        </div>
+      </div>
+    </div>
+
   </div>
+
+  <!-- トースト通知のライブリージョン (読み上げ対応) -->
+  <div id="toastLiveRegion" aria-live="polite" aria-atomic="true"></div>
 
   <!-- スクリプト群 -->
   <script src="js/tiles.js"></script>
   <script src="js/shanten.js"></script>
   <script src="js/score.js"></script>
   <script src="js/ocr.js"></script>
+  <script src="js/sfx.js"></script>
   <script src="js/game.js"></script>
   <script src="js/app.js"></script>
   <script>

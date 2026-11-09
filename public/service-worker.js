@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v6';
+const CACHE_NAME = 'mahjong-ai-v10';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -7,6 +7,8 @@ const ASSETS_TO_CACHE = [
   './js/shanten.js',
   './js/score.js',
   './js/ocr.js',
+  './js/sfx.js',
+  './js/game.js',
   './js/app.js',
   './manifest.json'
 ];
@@ -30,10 +32,22 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  // GET 以外はキャッシュ対象外 (そのままネットワークへ)
+  if (request.method !== 'GET') return;
+
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+    caches.match(request).then((cached) => {
+      if (cached) return cached;
+      return fetch(request).then((response) => {
+        // 同一オリジンの成功応答はランタイムキャッシュへ保存し、次回以降オフラインでも使えるようにする
+        const isSameOrigin = new URL(request.url).origin === self.location.origin;
+        if (response && response.status === 200 && isSameOrigin) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      });
     })
   );
 });
-

@@ -45,8 +45,9 @@
     const normalWinTile = window.normalizeTile(winTile);
 
     // 14枚の手牌（アガリ牌を手牌に含める）
+    // 副露がある場合は hand が「閉じた牌のみ」のため、面子分を加味して判定する
     let allTiles = [...normalHand];
-    if (allTiles.length === 13) {
+    if (allTiles.length + melds.length * 3 === 13) {
       allTiles.push(normalWinTile);
     }
 
@@ -69,10 +70,16 @@
     }
 
     // 2. 特殊形：七対子の判定
+    //    七対子形は面子手（二盃口など）としても解釈できるため、即確定せず
+    //    一般手の最良結果と比較して高い方を採用する（高点法）。
+    let chiitoiResult = null;
     if (isMenzen && isChiitoitsu(counts)) {
-      return evaluateChiitoitsuScore({
+      chiitoiResult = evaluateChiitoitsuScore({
         counts, normalHand, normalWinTile, isTsumo, isDealer, options, redDoraCount
       });
+      if (!chiitoiResult || typeof chiitoiResult.totalPoints !== 'number') {
+        chiitoiResult = null;
+      }
     }
 
     // 3. 一般手（面子手）の全分解パターンの評価（高点法）
@@ -95,6 +102,13 @@
           }))
         };
       }
+    }
+
+    // 七対子と面子手の両方が成立する場合は高点法で高い方を採用
+    if (chiitoiResult) {
+      const stdPoints = (bestResult && typeof bestResult.totalPoints === 'number')
+        ? bestResult.totalPoints : -1;
+      return (stdPoints > chiitoiResult.totalPoints) ? bestResult : chiitoiResult;
     }
 
     return bestResult || { isAgari: false, error: '役がありません（役なし）' };
@@ -251,9 +265,9 @@
     const isPinfu = checkPinfu(decomp, allMentsu, isMenzen, winIdx, options);
     if (isPinfu) yakuList.push({ name: '平和（ピンフ）', han: 1 });
 
-    // 2. 断幺九 (Tanyao)
+    // 2. 断幺九 (Tanyao) — 食いタンなしルールでは門前のみ
     const counts = window.handToCounts(allTiles);
-    if (isAllSimpu(counts)) yakuList.push({ name: '断幺九（タンヤオ）', han: 1 });
+    if (isAllSimpu(counts) && (isMenzen || options.kuitan !== false)) yakuList.push({ name: '断幺九（タンヤオ）', han: 1 });
 
     // 3. 門前清自摸和
     if (isMenzen && isTsumo) yakuList.push({ name: '門前清自摸和（ツモ）', han: 1 });
@@ -783,6 +797,21 @@
     let sangenCount = 0;
     allMentsu.forEach(m => { if (m.type !== 'shuntsu' && m.tile >= 31 && m.tile <= 33) sangenCount++; });
     if (sangenCount === 3) list.push({ name: '大三元', han: 13, isYakuman: true, yakumanMultiplier: 1 });
+
+    // 小四喜・大四喜 (風牌の刻子/槓子と雀頭)
+    const windKoutsu = allMentsu.filter(m => m.type !== 'shuntsu' && m.tile >= 27 && m.tile <= 30).length;
+    const headIsWind = decomp.head >= 27 && decomp.head <= 30;
+    if (windKoutsu === 4) {
+      list.push({ name: '大四喜', han: 26, isYakuman: true, yakumanMultiplier: 2 });
+    } else if (windKoutsu === 3 && headIsWind) {
+      list.push({ name: '小四喜', han: 13, isYakuman: true, yakumanMultiplier: 1 });
+    }
+
+    // 四槓子 (槓子が4つ)
+    const kanCount = allMentsu.filter(m => m.type === 'minkan' || m.type === 'ankan').length;
+    if (kanCount === 4) {
+      list.push({ name: '四槓子', han: 13, isYakuman: true, yakumanMultiplier: 1 });
+    }
 
     // 字一色
     let onlyHonor = true;
