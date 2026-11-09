@@ -1990,19 +1990,30 @@ body.mat-theme {
 
 .kawa-middle-container {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   width: 100%;
   gap: 10px;
 }
 
+.kawa-middle-container .center-dora-display {
+  align-self: center;
+}
+
+/* 河は6枚で折り返し、本人の左端から並べる */
 .kawa-row {
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
-  justify-content: center;
-  max-width: 280px;
+  justify-content: flex-start;
+  width: 224px;
+  max-width: 100%;
   min-height: 38px;
+}
+
+/* 対面の河は対面から見て左から (自分からは右から) 並ぶ */
+.kawa-toimen {
+  flex-direction: row-reverse;
 }
 
 .kawa-col {
@@ -2010,7 +2021,23 @@ body.mat-theme {
   flex-direction: column;
   gap: 2px;
   min-width: 50px;
+  height: 100%;
+  justify-content: flex-start;
   align-items: center;
+}
+
+/* 下家の河は本人の左 (自分からは下) から並ぶ */
+.kawa-shimocha {
+  flex-direction: column-reverse;
+}
+
+/* 左右の河: 回転した牌の見た目の高さに合わせて詰める */
+.kawa-board .kawa-col .mj-tile {
+  margin: -7px 0;
+}
+
+.kawa-board .kawa-col .mj-tile.is-riichi-tile {
+  margin: 0 !important;
 }
 
 /* リーチ宣言牌の横向き */
@@ -2786,10 +2813,176 @@ body.mat-theme {
 
 /* ---- 卓の臨場感：暗い部屋のスポットライトと木枠レール ---- */
 .mahjong-table-viewport {
+  position: relative;
   background:
     radial-gradient(ellipse 78% 92% at 50% 36%, rgba(22, 101, 74, 0.4) 0%, rgba(4, 26, 20, 0.35) 55%, rgba(0, 0, 0, 0.6) 100%);
   border-radius: 26px;
   padding: 20px 12px 28px;
+}
+
+/* ---- 局開始のサイコロ演出 ---- */
+.dice-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.dice-card {
+  background: rgba(3, 24, 18, 0.88);
+  border: 2px solid rgba(245, 197, 66, 0.75);
+  border-radius: 16px;
+  padding: 16px 30px 14px;
+  text-align: center;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.65), 0 0 26px rgba(245, 197, 66, 0.3);
+  animation: diceCardIn 0.25s ease-out;
+}
+
+.dice-round {
+  font-family: 'Zen Old Mincho', serif;
+  font-weight: 900;
+  font-size: 1.05rem;
+  color: #fef08a;
+  letter-spacing: 0.12em;
+}
+
+.dice-faces {
+  font-size: 3.4rem;
+  line-height: 1.15;
+  color: #fff7ed;
+  text-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+}
+
+.dice-faces span {
+  display: inline-block;
+  animation: diceShake 0.14s linear infinite;
+}
+
+.dice-overlay.dice-done .dice-faces span {
+  animation: diceSettle 0.3s ease-out;
+  color: #fcd34d;
+}
+
+.dice-sum {
+  min-height: 1.2em;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #e7e5e4;
+}
+
+@keyframes diceCardIn {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes diceShake {
+  0% { transform: rotate(-9deg) translateY(0); }
+  50% { transform: rotate(8deg) translateY(-3px); }
+  100% { transform: rotate(-6deg) translateY(1px); }
+}
+
+@keyframes diceSettle {
+  0% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* ---- 配牌・ツモのモーション ---- */
+.deal-in {
+  animation: dealIn 0.38s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+
+@keyframes dealIn {
+  0% { transform: translateY(18px) scale(0.75); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.tsumo-slide-in {
+  animation: tsumoSlideIn 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes tsumoSlideIn {
+  0% { transform: translateX(26px) translateY(6px) scale(1.08); opacity: 0.3; }
+  100% { transform: translateX(0) translateY(0) scale(1); opacity: 1; }
+}
+
+.back-slide-in {
+  animation: backSlideIn 0.3s ease-out both;
+}
+
+@keyframes backSlideIn {
+  0% { transform: translateY(-8px) scale(1.12); opacity: 0.4; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* 左右の家の伏せ牌: 本人の方を向く (回転した見た目のままモーションする) */
+.enemy-hand-wrap.vertical .tile-back.back-seat-1 {
+  transform: rotate(90deg);
+  margin: -5px 0;
+}
+
+.enemy-hand-wrap.vertical .tile-back.back-seat-3 {
+  transform: rotate(-90deg);
+  margin: -5px 0;
+}
+
+.tile-back.back-seat-1.deal-in { animation-name: dealInSeat1; }
+.tile-back.back-seat-3.deal-in { animation-name: dealInSeat3; }
+.tile-back.back-seat-1.back-slide-in { animation-name: backSlideInSeat1; }
+.tile-back.back-seat-3.back-slide-in { animation-name: backSlideInSeat3; }
+
+@keyframes dealInSeat1 {
+  0% { transform: translateX(18px) rotate(90deg) scale(0.75); opacity: 0; }
+  100% { transform: translateX(0) rotate(90deg) scale(1); opacity: 1; }
+}
+
+@keyframes dealInSeat3 {
+  0% { transform: translateX(-18px) rotate(-90deg) scale(0.75); opacity: 0; }
+  100% { transform: translateX(0) rotate(-90deg) scale(1); opacity: 1; }
+}
+
+@keyframes backSlideInSeat1 {
+  0% { transform: translateX(8px) rotate(90deg) scale(1.12); opacity: 0.4; }
+  100% { transform: translateX(0) rotate(90deg) scale(1); opacity: 1; }
+}
+
+@keyframes backSlideInSeat3 {
+  0% { transform: translateX(-8px) rotate(-90deg) scale(1.12); opacity: 0.4; }
+  100% { transform: translateX(0) rotate(-90deg) scale(1); opacity: 1; }
+}
+
+/* 自分の手牌: 立体の厚み (竹色の層) は下ではなく上側に出す */
+#jibunHandTiles .mj-tile,
+#jibunTsumoTile .mj-tile {
+  border-bottom: 2px solid #b8ac98;
+  border-top: 5px solid #d97706;
+}
+
+/* 手番の座席プレート発光 */
+.table-seat.seat-active .player-info-card {
+  border-color: rgba(245, 197, 66, 0.95);
+  box-shadow: 0 0 0 2px rgba(245, 197, 66, 0.55), 0 0 18px rgba(245, 197, 66, 0.5);
+}
+
+/* 最新の捨て牌マーカー (金のドット) */
+.kawa-board .mj-tile.kawa-latest::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #f59e0b;
+  border: 1.5px solid #fff7ed;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.9);
+  z-index: 4;
+  pointer-events: none;
 }
 
 .mahjong-table-mat {
@@ -2981,7 +3174,7 @@ body.mat-theme {
 /* ---- 1. 打牌アニメーション: 河の最新牌が打牌者の方向から滑り込む ---- */
 /* 座席のローカル座標系で「手元側」から入る: 0=自分(下) 1=下家(右) 2=対面(上) 3=上家(左) */
 .kawa-just-placed {
-  animation-duration: 0.3s;
+  animation-duration: 0.38s;
   animation-timing-function: cubic-bezier(0.2, 0.9, 0.3, 1.2);
   animation-fill-mode: both;
   z-index: 2;
@@ -2993,25 +3186,25 @@ body.mat-theme {
 .kawa-drop-3 { animation-name: kawaDropFromLeft; }
 
 @keyframes kawaDropFromBottom {
-  0% { transform: translateY(16px) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  0% { transform: translateY(58px) scale(1.15); opacity: 0.5; box-shadow: 0 14px 22px rgba(0, 0, 0, 0.5); }
   70% { transform: translateY(-1px) scale(1.0); opacity: 1; }
   100% { transform: translateY(0) scale(1); opacity: 1; }
 }
 
 @keyframes kawaDropFromTop {
-  0% { transform: translateY(-16px) rotate(180deg) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  0% { transform: translateY(-76px) rotate(180deg) scale(1.15); opacity: 0.5; box-shadow: 0 14px 22px rgba(0, 0, 0, 0.5); }
   70% { transform: translateY(1px) rotate(180deg) scale(1.0); opacity: 1; }
   100% { transform: translateY(0) rotate(180deg) scale(1); opacity: 1; }
 }
 
 @keyframes kawaDropFromRight {
-  0% { transform: translateX(16px) rotate(90deg) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  0% { transform: translateX(76px) rotate(90deg) scale(1.15); opacity: 0.5; box-shadow: 0 14px 22px rgba(0, 0, 0, 0.5); }
   70% { transform: translateX(-1px) rotate(90deg) scale(1.0); opacity: 1; }
   100% { transform: translateX(0) rotate(90deg) scale(1); opacity: 1; }
 }
 
 @keyframes kawaDropFromLeft {
-  0% { transform: translateX(-16px) rotate(-90deg) scale(1.12); opacity: 0.4; box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5); }
+  0% { transform: translateX(-76px) rotate(-90deg) scale(1.15); opacity: 0.5; box-shadow: 0 14px 22px rgba(0, 0, 0, 0.5); }
   70% { transform: translateX(1px) rotate(-90deg) scale(1.0); opacity: 1; }
   100% { transform: translateX(0) rotate(-90deg) scale(1); opacity: 1; }
 }
@@ -3023,7 +3216,7 @@ body.mat-theme {
 }
 
 @keyframes riichiDeclareDrop {
-  0% { transform: translateY(22px) rotate(90deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  0% { transform: translateY(84px) rotate(90deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
   55% { transform: translateY(0) rotate(90deg) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
   100% { transform: translateY(0) rotate(90deg) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
 }
@@ -3034,19 +3227,19 @@ body.mat-theme {
 .kawa-just-placed.kawa-drop-3.riichi-declare-drop { animation-name: riichiDeclareDropSeat3; }
 
 @keyframes riichiDeclareDropSeat1 {
-  0% { transform: translateX(22px) rotate(180deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  0% { transform: translateX(84px) rotate(180deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
   55% { transform: translateX(0) rotate(180deg) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
   100% { transform: translateX(0) rotate(180deg) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
 }
 
 @keyframes riichiDeclareDropSeat2 {
-  0% { transform: translateY(-22px) rotate(270deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  0% { transform: translateY(-84px) rotate(270deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
   55% { transform: translateY(0) rotate(270deg) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
   100% { transform: translateY(0) rotate(270deg) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
 }
 
 @keyframes riichiDeclareDropSeat3 {
-  0% { transform: translateX(-22px) rotate(0deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
+  0% { transform: translateX(-84px) rotate(0deg) scale(1.2); opacity: 0.3; box-shadow: 0 0 0 rgba(245, 197, 66, 0); }
   55% { transform: translateX(0) rotate(0deg) scale(1.04); opacity: 1; box-shadow: 0 0 22px rgba(245, 197, 66, 0.95); }
   100% { transform: translateX(0) rotate(0deg) scale(1); opacity: 1; box-shadow: 0 0 6px rgba(245, 197, 66, 0.35); }
 }
@@ -3143,6 +3336,11 @@ body.mat-theme {
   .kawa-just-placed,
   .kawa-just-placed.riichi-declare-drop,
   .kawa-call-target,
+  .deal-in,
+  .tsumo-slide-in,
+  .back-slide-in,
+  .dice-faces span,
+  .dice-card,
   .rank-pop,
   .dora-flip-in,
   .riichi-badge.stick-pop,

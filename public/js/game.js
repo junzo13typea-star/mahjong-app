@@ -163,6 +163,11 @@
       // アクションバー
       gameActionBar: document.getElementById('gameActionBar'),
       actionBarContext: document.getElementById('actionBarContext'),
+      diceOverlay: document.getElementById('diceOverlay'),
+      diceFace1: document.getElementById('diceFace1'),
+      diceFace2: document.getElementById('diceFace2'),
+      diceRoundLabel: document.getElementById('diceRoundLabel'),
+      diceSumLabel: document.getElementById('diceSumLabel'),
       btnActionRon: document.getElementById('btnActionRon'),
       btnActionTsumo: document.getElementById('btnActionTsumo'),
       btnActionRiichi: document.getElementById('btnActionRiichi'),
@@ -538,6 +543,35 @@
   /**
    * 1局の開始
    */
+  const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+
+  // 局開始のサイコロ演出 (見た目のみ・対局進行は妨げない)
+  function showDiceRoll() {
+    if (!DOM.diceOverlay || !DOM.diceFace1 || !DOM.diceFace2) return;
+    const roll1 = 1 + Math.floor(Math.random() * 6);
+    const roll2 = 1 + Math.floor(Math.random() * 6);
+    if (DOM.diceRoundLabel) DOM.diceRoundLabel.textContent = getCurrentRoundLabel();
+    if (DOM.diceSumLabel) DOM.diceSumLabel.textContent = '';
+    DOM.diceOverlay.style.display = 'flex';
+    DOM.diceOverlay.classList.remove('dice-done');
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+      DOM.diceFace1.textContent = DICE_FACES[Math.floor(Math.random() * 6)];
+      DOM.diceFace2.textContent = DICE_FACES[Math.floor(Math.random() * 6)];
+      if (ticks >= 9) {
+        clearInterval(timer);
+        DOM.diceFace1.textContent = DICE_FACES[roll1 - 1];
+        DOM.diceFace2.textContent = DICE_FACES[roll2 - 1];
+        if (DOM.diceSumLabel) {
+          DOM.diceSumLabel.textContent = `出目 ${roll1 + roll2} ・ 親は ${PLAYER_NAMES[game.dealerIdx]}`;
+        }
+        DOM.diceOverlay.classList.add('dice-done');
+        setTimeout(() => { if (DOM.diceOverlay) DOM.diceOverlay.style.display = 'none'; }, 650);
+      }
+    }, 70);
+  }
+
   function startRound() {
     clearTimeout(game.turnTimer);
     hideActionBar();
@@ -562,10 +596,15 @@
       game.players[i].discardCount = 0;
       game.players[i].kuikaeForbidden = null;
       game.players[i].lastDrawWasRinshan = false;
+      game.players[i].lastDrawSeq = 0;
+      game.players[i].drawSeqRendered = 0;
     }
 
     game.discardSeq = 0;
     game.kanCount = 0;
+    game.justDiscarded = null;
+    game.dealPending = true;
+    showDiceRoll();
 
     // 牌山生成（3人麻雀は萬子の2〜8を除外）
     buildWall();
@@ -647,7 +686,9 @@
     clearTimeout(game.turnTimer);
     game.currentTurn = playerIdx;
     game.lastDrawnTile = drawnTile;
+    game.drawSeq = (game.drawSeq || 0) + 1;
     const player = game.players[playerIdx];
+    player.lastDrawSeq = game.drawSeq;
     player.tsumoTile = drawnTile;
     player.lastDrawWasRinshan = false;
     player.tempFuriten = false; // 同巡内見逃しフリテンは自分のツモで解除
@@ -1192,6 +1233,10 @@
     const pending = game.pendingActions;
     hideActionBar();
     game.pendingActions = null;
+    // 鳴き・ロンで対象牌が河から離れたら最新マーカーを消す
+    if (action === 'pon' || action === 'chi' || action === 'kan' || action === 'ron') {
+      game.justDiscarded = null;
+    }
 
     if (!pending) return;
 
@@ -1620,6 +1665,16 @@
 
     // 自分手牌
     renderPlayerHand();
+
+    // 手番の座席プレートを光らせる
+    const seatOrder = ['seat-jibun', 'seat-shimocha', 'seat-toimen', 'seat-kamicha'];
+    document.querySelectorAll('.table-seat').forEach(el => {
+      if (el.classList.contains(seatOrder[game.currentTurn])) el.classList.add('seat-active');
+      else el.classList.remove('seat-active');
+    });
+
+    // 配牌モーションは最初の描画だけ
+    game.dealPending = false;
   }
 
   function renderPlayerHand() {
@@ -1629,8 +1684,13 @@
     DOM.jibunHandTiles.innerHTML = '';
     DOM.jibunTsumoTile.innerHTML = '';
 
-    player.hand.forEach(tile => {
+    player.hand.forEach((tile, idx) => {
       const tileEl = createTileDom(tile, false);
+      // 配牌モーション: 局の最初だけ1枚ずつ順に配られる
+      if (game.dealPending) {
+        tileEl.classList.add('deal-in');
+        tileEl.style.animationDelay = `${idx * 45}ms`;
+      }
       tileEl.addEventListener('click', () => {
         // リーチ中はツモ切りのみ。ただし宣言直後 (宣言打牌前) は手牌からも切れる
         if (game.currentTurn === 0 && (!player.isRiichi || player.ippatsuDeclarationPending)) {
@@ -1643,6 +1703,11 @@
     if (player.tsumoTile) {
       const tsumoEl = createTileDom(player.tsumoTile, false);
       tsumoEl.classList.add('tsumo-highlight');
+      // ツモモーション: 新しく引いた牌だけ山側から滑り込む
+      if (player.lastDrawSeq && player.lastDrawSeq !== player.drawSeqRendered) {
+        tsumoEl.classList.add('tsumo-slide-in');
+        player.drawSeqRendered = player.lastDrawSeq;
+      }
       tsumoEl.addEventListener('click', () => {
         if (game.currentTurn === 0) {
           handleDiscardTile(0, player.tsumoTile, true);
@@ -1672,6 +1737,18 @@
     for (let i = 0; i < totalCount; i++) {
       const backTile = document.createElement('div');
       backTile.className = 'mj-tile tile-back';
+      // 左右の家の伏せ牌は本人の方を向く (右の家=+90° / 左の家=-90°)
+      if (playerIdx === 1 || playerIdx === 3) backTile.classList.add(`back-seat-${playerIdx}`);
+      // 配牌モーション
+      if (game.dealPending) {
+        backTile.classList.add('deal-in');
+        backTile.style.animationDelay = `${i * 45}ms`;
+      }
+      // ツモモーション: その家が引いた直後だけ最後の1枚が滑り込む
+      if (i === totalCount - 1 && player.lastDrawSeq && player.lastDrawSeq !== player.drawSeqRendered) {
+        backTile.classList.add('back-slide-in');
+        player.drawSeqRendered = player.lastDrawSeq;
+      }
       container.appendChild(backTile);
     }
   }
@@ -1699,6 +1776,10 @@
         tileEl.classList.add('kawa-just-placed', `kawa-drop-${playerIdx}`);
         if (item.isRiichi) tileEl.classList.add('riichi-declare-drop');
         jd.rendered = true;
+      }
+      // 最新の捨て牌マーカー (次の打牌まで残る)
+      if (jd && jd.playerIdx === playerIdx && i === player.kawa.length - 1) {
+        tileEl.classList.add('kawa-latest');
       }
       container.appendChild(tileEl);
     });

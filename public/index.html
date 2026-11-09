@@ -609,6 +609,14 @@
 
         <!-- 3D視点コンテナ -->
         <div class="mahjong-table-viewport">
+          <!-- 局開始のサイコロ演出 -->
+          <div class="dice-overlay" id="diceOverlay" style="display: none;">
+            <div class="dice-card">
+              <div class="dice-round" id="diceRoundLabel">東1局</div>
+              <div class="dice-faces"><span id="diceFace1">⚄</span><span id="diceFace2">⚂</span></div>
+              <div class="dice-sum" id="diceSumLabel"></div>
+            </div>
+          </div>
           <!-- 本格麻雀卓（3Dグリーンフェルト調マット） -->
           <div class="mahjong-table-mat mode-3d" id="mahjongTableMat">
             <!-- 対面 (CPU 2 - レン) -->
