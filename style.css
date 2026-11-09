@@ -3517,3 +3517,25 @@ body.mat-theme {
     right: 2px;
   }
 }
+
+/* === 実用化・UI見直し (2026-11-09 夜): 敵の副露エリア + アクションバーの折り返し === */
+.enemy-melds-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 4px;
+}
+.enemy-melds-wrap:empty {
+  display: none;
+}
+.seat-kamicha .enemy-melds-wrap,
+.seat-shimocha .enemy-melds-wrap {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.game-action-bar {
+  flex-wrap: wrap;
+  align-items: center;
+}

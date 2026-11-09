@@ -42,6 +42,7 @@
     lastDiscardedTile: null, // 直前の打牌
     lastDiscarder: -1,   // 直前の打牌者
     pendingActions: null,// アクション待ち状態
+    pendingCpuRons: [],  // 打牌に対してロンできるCPU一覧 (ダブロン解決用)
     isAssisting: true,   // 待ち牌アシスト表示
     turnTimer: null,     // CPUターンタイマー
 
@@ -174,6 +175,7 @@
       btnActionPon: document.getElementById('btnActionPon'),
       btnActionChi: document.getElementById('btnActionChi'),
       btnActionKan: document.getElementById('btnActionKan'),
+      btnActionRyukyoku: document.getElementById('btnActionRyukyoku'),
       btnActionPass: document.getElementById('btnActionPass'),
 
       // アシストバー
@@ -451,6 +453,7 @@
     if (DOM.btnActionPon) DOM.btnActionPon.addEventListener('click', () => handlePlayerAction('pon'));
     if (DOM.btnActionChi) DOM.btnActionChi.addEventListener('click', () => handlePlayerAction('chi'));
     if (DOM.btnActionKan) DOM.btnActionKan.addEventListener('click', () => handlePlayerAction('kan'));
+    if (DOM.btnActionRyukyoku) DOM.btnActionRyukyoku.addEventListener('click', () => handlePlayerAction('ryukyoku'));
 
     // 次の局へ
     if (DOM.btnNextRound) {
@@ -756,6 +759,21 @@
       hasActions = true;
     }
 
+    // 九種九牌判定: 自分の最初のツモで、まだ誰も鳴いておらず、
+    // 么九牌が9種類以上あれば途中流局を選べる
+    const noCallsYet = game.players.every(p => p.melds.length === 0);
+    if (player.discardCount === 0 && player.kawa.length === 0 && noCallsYet) {
+      const yaochuKinds = new Set(
+        fullHand.map(t => normTileCode(t)).filter(c =>
+          c === '1m' || c === '9m' || c === '1p' || c === '9p' || c === '1s' || c === '9s' ||
+          (c[1] === 'z' && c[0] >= '1' && c[0] <= '7'))
+      );
+      if (yaochuKinds.size >= 9 && DOM.btnActionRyukyoku) {
+        DOM.btnActionRyukyoku.style.display = 'inline-block';
+        hasActions = true;
+      }
+    }
+
     if (hasActions) {
       if (DOM.actionBarContext) DOM.actionBarContext.style.display = 'none';
       DOM.btnActionPass.style.display = 'inline-block';
@@ -942,6 +960,11 @@
       }
     }
 
+    // カン (暗槓・加槓): 向聴を崩さない場合のみ行う
+    if (tryCpuKanInTurn(playerIdx, fullHand, shanten)) {
+      return;
+    }
+
     if (!cpu.isRiichi && cpu.isMenzen && cpu.score >= 1000) {
       if (canRiichi(cpu.hand, drawnTile) && Math.random() < 0.75) {
         declareRiichi(playerIdx);
@@ -1077,27 +1100,134 @@
   }
 
   function checkOtherPlayersResponses(discarderIdx, tile) {
-    // プレイヤーの反応チェック
+    // CPUのロンは全員分を先に集める (ダブロン/トリロン対応。
+    // 以前はプレイヤーがパスするとCPUのロン自体が見送られていた)
+    game.pendingCpuRons = [];
+    for (let i = 1; i < game.playerCount; i++) {
+      if (i === discarderIdx) continue;
+      const cpu = game.players[i];
+      const scoreRes = cpuRonScore(cpu, tile);
+      if (scoreRes) game.pendingCpuRons.push({ idx: i, scoreRes });
+    }
+
+    // プレイヤーの反応チェック (CPUのロンがある場合は、ロンが鳴きに優先するため鳴きは提示しない)
     if (discarderIdx !== 0) {
       const player = game.players[0];
-      if (checkPlayerResponsesToDiscard(player, discarderIdx, tile)) {
+      if (checkPlayerResponsesToDiscard(player, discarderIdx, tile, game.pendingCpuRons.length > 0)) {
         return;
       }
     }
 
-    // CPUのロンチェック
-    for (let i = 1; i < game.playerCount; i++) {
-      if (i === discarderIdx) continue;
-      const cpu = game.players[i];
-      if (checkCpuRon(cpu, tile)) {
+    resolveCpuResponses(discarderIdx, tile);
+  }
+
+  // プレイヤーの応答が無い/パスされた後に、CPUのロン→鳴きの順で解決する
+  function resolveCpuResponses(discarderIdx, tile) {
+    // 四風連打: 全員の最初の打牌が同じ風牌で鳴きがなければ途中流局 (ロンは上の段で優先済み)
+    if (game.playerCount === 4 &&
+        game.players.every(p => p.kawa.length === 1 && p.melds.length === 0)) {
+      const winds = game.players.map(p => normTileCode(p.kawa[0].tile));
+      if (winds.every(w => w === winds[0]) && ['1z', '2z', '3z', '4z'].includes(winds[0])) {
+        handleInterruptedRyukyoku('四風連打');
         return;
+      }
+    }
+
+    if (game.pendingCpuRons && game.pendingCpuRons.length > 0) {
+      const winners = game.pendingCpuRons.map(r => ({ idx: r.idx, scoreRes: r.scoreRes }));
+      game.pendingCpuRons = [];
+      fireRonWinners(winners, discarderIdx, tile);
+      return;
+    }
+
+    // ポン/カン (全員) がチー (下家のみ) に優先する
+    const n = game.playerCount;
+    for (let step = 1; step < n; step++) {
+      const idx = (discarderIdx + step) % n;
+      if (idx === 0) continue;
+      const cpu = game.players[idx];
+      if (cpu.isRiichi) continue;
+      if (cpuWantsMinkan(cpu, tile)) { executeCpuCall(idx, 'kan', tile); return; }
+      if (cpuWantsPon(cpu, tile)) { executeCpuCall(idx, 'pon', tile); return; }
+    }
+    if (n === 4) {
+      const shimochaIdx = (discarderIdx + 1) % n;
+      if (shimochaIdx !== 0) {
+        const cpu = game.players[shimochaIdx];
+        if (!cpu.isRiichi) {
+          const chiChoice = cpuDecideChi(cpu, tile);
+          if (chiChoice) { executeCpuCall(shimochaIdx, 'chi', tile, chiChoice); return; }
+        }
       }
     }
 
     proceedToNextTurn();
   }
 
-  function checkPlayerResponsesToDiscard(player, discarderIdx, tile) {
+  // ロン和了の解決 (1人なら通常処理、複数ならダブロン/トリロン)
+  function fireRonWinners(winners, loserIdx, tile) {
+    if (winners.length === 1) {
+      handleAgari(winners[0].idx, loserIdx, tile, false, winners[0].scoreRes);
+      return;
+    }
+    // ダブロン/トリロン: 各和了者が放銃者から満額を受け取る。
+    // 供託リーチ棒は放銃者から時計回りに最も近い和了者 (頭) が全て得る。
+    const n = game.playerCount;
+    winners.sort((a, b) => ((a.idx - loserIdx + n) % n) - ((b.idx - loserIdx + n) % n));
+    const loser = game.players[loserIdx];
+    const sticksBonus = game.riichiSticks * 1000;
+    winners.forEach((w, i) => {
+      const pts = (w.scoreRes && w.scoreRes.points && typeof w.scoreRes.points === 'object')
+        ? w.scoreRes.points : { ron: 0 };
+      loser.score -= pts.ron;
+      game.players[w.idx].score += pts.ron + (i === 0 ? sticksBonus : 0);
+    });
+    game.riichiSticks = 0;
+    game.lastRoundRenchan = winners.some(w => game.players[w.idx].seatWind === '1z');
+    showMultiAgariModal(winners, loserIdx, tile);
+  }
+
+  function showMultiAgariModal(winners, loserIdx, tile) {
+    if (!DOM.gameResultModal) return;
+    const label = winners.length >= 3 ? 'トリプルロン' : 'ダブロン';
+    DOM.resultModalTitle.textContent = `🀄️ ${label}！`;
+    DOM.resultWinnerAvatar.textContent = '🎉';
+    DOM.resultWinnerName.textContent = winners.map(w => game.players[w.idx].name).join(' ＆ ');
+    DOM.resultAgariType.textContent = `放銃: ${PLAYER_NAMES[loserIdx]}`;
+
+    DOM.resultHandTiles.innerHTML = '';
+    winners.forEach(w => {
+      const winner = game.players[w.idx];
+      const fullHand = [...winner.hand];
+      sortHand(fullHand);
+      fullHand.forEach(t => DOM.resultHandTiles.appendChild(createTileDom(t, false)));
+      const winEl = createTileDom(tile, false);
+      winEl.classList.add('agari-tile');
+      DOM.resultHandTiles.appendChild(winEl);
+    });
+
+    DOM.resultDoraTiles.innerHTML = '';
+    game.doraIndicators.forEach(t => DOM.resultDoraTiles.appendChild(createTileDom(t, true)));
+
+    DOM.resultYakuList.innerHTML = '';
+    winners.forEach(w => {
+      const names = (w.scoreRes.yakuList || []).map(y => y.name).join('・') || '役あり';
+      const li = document.createElement('li');
+      li.className = 'yaku-badge-item';
+      li.innerHTML = `<span class="yaku-name">${game.players[w.idx].name}: ${names}</span><span class="yaku-han">${w.scoreRes.han || 0}翻</span>`;
+      DOM.resultYakuList.appendChild(li);
+    });
+
+    const total = winners.reduce((s, w) => s + (w.scoreRes.totalPoints || 0), 0);
+    animateScoreCount(DOM.resultScorePoints, total);
+    DOM.resultScoreRank.textContent = label;
+    DOM.resultScoreDetails.textContent = `合計 ${total}点 (供託は先頭の和了者へ)`;
+
+    sfx('agari', winners.some(w => w.scoreRes.isYakuman));
+    DOM.gameResultModal.classList.remove('hidden');
+  }
+
+  function checkPlayerResponsesToDiscard(player, discarderIdx, tile, suppressCalls) {
     let canRon = false;
     let canPon = false;
     let canChi = false;
@@ -1127,8 +1257,8 @@
       if (scoreRes && scoreRes.han >= 1) canRon = true;
     }
 
-    // 鳴き判定 (リーチ中は不可)
-    if (!player.isRiichi) {
+    // 鳴き判定 (リーチ中は不可。CPUのロンがある場合はロン優先のため鳴きを提示しない)
+    if (!player.isRiichi && !suppressCalls) {
       const raw = window.normalizeTile ? window.normalizeTile(tile) : tile;
       const sameCount = player.hand.filter(t => (window.normalizeTile ? window.normalizeTile(t) : t) === raw).length;
       if (sameCount >= 2) canPon = true;
@@ -1187,7 +1317,8 @@
     return (has(num - 2) && has(num - 1)) || (has(num - 1) && has(num + 1)) || (has(num + 1) && has(num + 2));
   }
 
-  function checkCpuRon(cpu, tile) {
+  // CPUがその牌でロンできるなら scoreRes を、できなければ null を返す (発火は呼び出し側)
+  function cpuRonScore(cpu, tile) {
     const testHand = [...cpu.hand, tile];
     const s = window.calculateShanten ? window.calculateShanten(testHand, cpu.melds.length) : 99;
     if (s === -1 && !isFuritenNow(cpu)) {
@@ -1208,16 +1339,29 @@
           ...buildSituationalOptions(cpu, false)
         }
       });
-      if (scoreRes && scoreRes.han >= 1) {
-        handleAgari(cpu.idx, game.lastDiscarder, tile, false, scoreRes);
-        return true;
-      }
+      if (scoreRes && scoreRes.han >= 1) return scoreRes;
     }
-    return false;
+    return null;
   }
 
   function proceedToNextTurn() {
     // ※ 一発はここでは消さない (宣言者の打牌ライフサイクルで管理する: P1-6)
+
+    // 四家立直: 全員のリーチ宣言打牌が通ったら途中流局
+    if (game.playerCount === 4 && game.players.every(p => p.isRiichi)) {
+      handleInterruptedRyukyoku('四家立直');
+      return;
+    }
+
+    // 四槓散了: 合計4回のカンが複数のプレイヤーに分散していたら途中流局
+    if (game.kanCount >= 4) {
+      const kanMakers = game.players.filter(p =>
+        p.melds.some(m => m.type === 'kan' || m.type === 'ankan'));
+      if (kanMakers.length >= 2) {
+        handleInterruptedRyukyoku('四槓散了');
+        return;
+      }
+    }
 
     if (game.wall.length === 0) {
       handleRyukyoku();
@@ -1249,7 +1393,8 @@
           else player.tempFuriten = true;                    // 自分の次のツモまで
           player.furiten = true;
         }
-        proceedToNextTurn();
+        // パス後はCPU側のロン・鳴きを解決する
+        resolveCpuResponses(pending.discarderIdx, pending.tile);
       }
       return;
     }
@@ -1298,12 +1443,23 @@
           ...buildSituationalOptions(player, false)
         }
       });
-      handleAgari(0, pending.discarderIdx, pending.tile, false, scoreRes);
+      // CPUにもロンがある場合はダブロンとしてまとめて解決する
+      const winners = [{ idx: 0, scoreRes }];
+      if (game.pendingCpuRons) winners.push(...game.pendingCpuRons);
+      game.pendingCpuRons = [];
+      fireRonWinners(winners, pending.discarderIdx, pending.tile);
       return;
     }
 
     if (action === 'riichi') {
       declareRiichi(0);
+      return;
+    }
+
+    if (action === 'ryukyoku') {
+      if (pending.type === 'tsumo') {
+        handleInterruptedRyukyoku('九種九牌');
+      }
       return;
     }
 
@@ -1395,6 +1551,210 @@
     }
   }
 
+  // ---------- CPUの鳴き (ポン・チー・カン) ----------
+  function cpuShanten(hand, meldCount) {
+    return window.calculateShanten ? window.calculateShanten(hand, meldCount) : 99;
+  }
+
+  // 門前から鳴く場合の最低条件: 鳴いた後に役の見込みがあるか
+  function cpuHasYakuPotential(cpu, handAfter, calledTiles) {
+    const counts = {};
+    handAfter.forEach(t => { const r = normTileCode(t); counts[r] = (counts[r] || 0) + 1; });
+    calledTiles.forEach(t => { const r = normTileCode(t); counts[r] = (counts[r] || 0) + 1; });
+    const yakuhaiTiles = ['5z', '6z', '7z', game.roundWind, cpu.seatWind];
+    if (yakuhaiTiles.some(y => (counts[y] || 0) >= 2)) return true;
+    // タンヤオ見込み: 么九牌が合計2枚以下 (頭に1組まで許容する簡易判定)
+    let yaochu = 0;
+    Object.entries(counts).forEach(([code, c]) => {
+      if (code[1] === 'z' || code[0] === '1' || code[0] === '9') yaochu += c;
+    });
+    if (yaochu <= 2) return true;
+    // ドラ3枚以上なら押し切る
+    if (countDora([...handAfter, ...calledTiles], game.doraIndicators) >= 3) return true;
+    return false;
+  }
+
+  function cpuWantsPon(cpu, tile) {
+    const raw = normTileCode(tile);
+    const sameIdx = [];
+    cpu.hand.forEach((t, i) => { if (normTileCode(t) === raw) sameIdx.push(i); });
+    if (sameIdx.length < 2) return false;
+    const handAfter = cpu.hand.filter((_, i) => i !== sameIdx[0] && i !== sameIdx[1]);
+    const sBefore = cpuShanten(cpu.hand, cpu.melds.length);
+    const sAfter = cpuShanten(handAfter, cpu.melds.length + 1);
+    if (sAfter > sBefore) return false;
+    const tripTiles = [cpu.hand[sameIdx[0]], cpu.hand[sameIdx[1]], tile];
+    const isYakuhaiSet = ['5z', '6z', '7z', game.roundWind, cpu.seatWind].includes(raw);
+    const doraSet = countDora(tripTiles, game.doraIndicators) > 0;
+    if (sAfter < sBefore) {
+      // 門前1向聴のリーチ狙いは半分見送る
+      if (cpu.isMenzen && sBefore === 1 && !isYakuhaiSet && Math.random() < 0.5) return false;
+      if (cpu.isMenzen && !cpuHasYakuPotential(cpu, handAfter, tripTiles)) return false;
+      return true;
+    }
+    // 同向聴では役牌・ドラ刻子のみ (副露済みかテンパイ近傍に限る)
+    return (isYakuhaiSet || doraSet) && (!cpu.isMenzen || sBefore <= 1);
+  }
+
+  function cpuDecideChi(cpu, tile) {
+    const raw = normTileCode(tile);
+    if (raw[1] === 'z') return null;
+    const suit = raw[1];
+    const num = parseInt(raw[0], 10);
+    const findIdx = (n) => cpu.hand.findIndex(t => normTileCode(t) === `${n}${suit}`);
+    const patterns = [[num - 2, num - 1], [num - 1, num + 1], [num + 1, num + 2]];
+    const sBefore = cpuShanten(cpu.hand, cpu.melds.length);
+    let best = null;
+    for (const [a, b] of patterns) {
+      if (a < 1 || b > 9) continue;
+      const ia = findIdx(a);
+      const ib = findIdx(b);
+      if (ia === -1 || ib === -1) continue;
+      const handAfter = cpu.hand.filter((_, i) => i !== ia && i !== ib);
+      const sAfter = cpuShanten(handAfter, cpu.melds.length + 1);
+      if (!best || sAfter < best.sAfter) best = { ia, ib, sAfter, handAfter };
+    }
+    if (!best || best.sAfter >= sBefore) return null;
+    if (cpu.isMenzen && sBefore === 1 && Math.random() < 0.5) return null;
+    if (cpu.isMenzen && !cpuHasYakuPotential(cpu, best.handAfter, [cpu.hand[best.ia], cpu.hand[best.ib], tile])) return null;
+    return best;
+  }
+
+  function cpuWantsMinkan(cpu, tile) {
+    const raw = normTileCode(tile);
+    const count = cpu.hand.filter(t => normTileCode(t) === raw).length;
+    if (count !== 3) return false;
+    const handAfter = cpu.hand.filter(t => normTileCode(t) !== raw);
+    const sBefore = cpuShanten(cpu.hand, cpu.melds.length);
+    const sAfter = cpuShanten(handAfter, cpu.melds.length + 1);
+    if (sAfter > sBefore) return false;
+    const isYakuhaiSet = ['5z', '6z', '7z', game.roundWind, cpu.seatWind].includes(raw);
+    return isYakuhaiSet || !cpu.isMenzen || countDora([tile, tile, tile, tile], game.doraIndicators) > 0;
+  }
+
+  function executeCpuCall(playerIdx, type, tile, chiChoice) {
+    const cpu = game.players[playerIdx];
+    const raw = normTileCode(tile);
+
+    // 鳴きが入ると全員の一発は消滅する
+    game.players.forEach(p => { p.ippatsu = false; p.ippatsuDeclarationPending = false; });
+    game.justDiscarded = null;
+
+    if (type === 'pon') {
+      const removed = [];
+      for (let i = cpu.hand.length - 1; i >= 0 && removed.length < 2; i--) {
+        if (normTileCode(cpu.hand[i]) === raw) removed.push(cpu.hand.splice(i, 1)[0]);
+      }
+      if (removed.length < 2) { proceedToNextTurn(); return; }
+      cpu.melds.push({ type: 'pon', tiles: [...removed, tile] });
+      if (game.rules.kuikae) cpu.kuikaeForbidden = [raw];
+      showGameToast(`${cpu.name} ポン！`, 'blue');
+    } else if (type === 'chi') {
+      const choice = chiChoice || cpuDecideChi(cpu, tile);
+      if (!choice) { proceedToNextTurn(); return; }
+      const t1 = cpu.hand[choice.ia];
+      const t2 = cpu.hand[choice.ib];
+      cpu.hand = cpu.hand.filter((_, i) => i !== choice.ia && i !== choice.ib);
+      cpu.melds.push({ type: 'chi', tiles: [t1, tile, t2] });
+      if (game.rules.kuikae) {
+        const num = parseInt(raw[0], 10);
+        const nums = [parseInt(normTileCode(t1)[0], 10), parseInt(normTileCode(t2)[0], 10), num];
+        const low = Math.min(...nums);
+        const forbidden = [raw];
+        if (num === low && low + 3 <= 9) forbidden.push(`${low + 3}${raw[1]}`);
+        else if (num === low + 2 && low - 1 >= 1) forbidden.push(`${low - 1}${raw[1]}`);
+        cpu.kuikaeForbidden = forbidden;
+      }
+      showGameToast(`${cpu.name} チー！`, 'blue');
+    } else if (type === 'kan') {
+      const removed = [];
+      for (let i = cpu.hand.length - 1; i >= 0 && removed.length < 3; i--) {
+        if (normTileCode(cpu.hand[i]) === raw) removed.push(cpu.hand.splice(i, 1)[0]);
+      }
+      if (removed.length < 3) { proceedToNextTurn(); return; }
+      cpu.melds.push({ type: 'kan', tiles: [...removed, tile] });
+      showGameToast(`${cpu.name} カン（明槓）！`, 'blue');
+    }
+    cpu.isMenzen = false;
+    game.currentTurn = playerIdx;
+    renderBoard();
+
+    if (type === 'kan') {
+      // 明槓: 槓ドラをめくり、嶺上からツモって続行する
+      addKanDora();
+      const rinshan = drawRinshanTile();
+      if (!rinshan) { renderBoard(); return; }
+      cpu.tsumoTile = rinshan;
+      cpu.lastDrawWasRinshan = true;
+      game.lastDrawnTile = rinshan;
+      game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), 450);
+      return;
+    }
+
+    // ポン・チー後はそのCPUが打牌する
+    game.turnTimer = setTimeout(() => cpuDiscardAfterCall(playerIdx), 450);
+  }
+
+  function cpuDiscardAfterCall(playerIdx) {
+    const cpu = game.players[playerIdx];
+    cpu.tsumoTile = null; // 鳴き後はツモ牌なしで手牌から切る
+    const discardTile = chooseCpuBestDiscard(cpu.hand, cpu.melds.length, cpu.kuikaeForbidden);
+    handleDiscardTile(playerIdx, discardTile, false);
+  }
+
+  // CPUのツモ時のカン (暗槓・加槓): 向聴を崩さない場合のみ
+  function tryCpuKanInTurn(playerIdx, fullHand, shantenNow) {
+    const cpu = game.players[playerIdx];
+    const kanOptions = getKanOptions(cpu, fullHand);
+    if (kanOptions.length === 0) return false;
+    const opt = kanOptions.find(o => o.kind === 'ankan') || kanOptions[0];
+    let handAfterKan;
+    if (opt.kind === 'ankan') {
+      handAfterKan = fullHand.filter(t => normTileCode(t) !== opt.tile);
+    } else {
+      const idx = fullHand.findIndex(t => normTileCode(t) === opt.tile);
+      handAfterKan = fullHand.filter((_, i) => i !== idx);
+    }
+    const meldsAfter = cpu.melds.length + (opt.kind === 'ankan' ? 1 : 0);
+    const sAfterKan = cpuShanten(handAfterKan, meldsAfter);
+    const kanOk = cpu.isRiichi
+      ? (opt.kind === 'ankan' && sAfterKan === 0)
+      : (sAfterKan <= shantenNow);
+    if (!kanOk) return false;
+
+    cpu.ippatsu = false;
+    cpu.ippatsuDeclarationPending = false;
+    if (opt.kind === 'ankan') {
+      const kanTiles = fullHand.filter(t => normTileCode(t) === opt.tile);
+      cpu.hand = fullHand.filter(t => normTileCode(t) !== opt.tile);
+      cpu.melds.push({ type: 'ankan', tiles: kanTiles });
+      showGameToast(`${cpu.name} 暗槓（アンカン）！`, 'blue');
+    } else {
+      const meld = cpu.melds.find(m => m.type === 'pon' && normTileCode(m.tiles[0]) === opt.tile);
+      if (!meld) return false;
+      const idx = fullHand.findIndex(t => normTileCode(t) === opt.tile);
+      const added = fullHand[idx];
+      const remain = [...fullHand];
+      remain.splice(idx, 1);
+      cpu.hand = remain;
+      meld.type = 'kan';
+      meld.tiles = [...meld.tiles, added];
+      showGameToast(`${cpu.name} 加槓（カカン）！`, 'blue');
+    }
+    cpu.tsumoTile = null;
+
+    addKanDora();
+    const rinshan = drawRinshanTile();
+    game.currentTurn = playerIdx;
+    if (!rinshan) { renderBoard(); return true; }
+    cpu.tsumoTile = rinshan;
+    cpu.lastDrawWasRinshan = true;
+    game.lastDrawnTile = rinshan;
+    renderBoard();
+    game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), 450);
+    return true;
+  }
+
   function handleAgari(winnerIdx, loserIdx, winTile, isTsumo, scoreRes) {
     const winner = game.players[winnerIdx];
     // calculateScore の返却形式: points = { total, ron, oyaTsumo, koTsumo, honbaBonus }
@@ -1424,6 +1784,29 @@
 
     game.lastRoundRenchan = (winner.seatWind === '1z');
     showAgariModal(winner, loserIdx, winTile, isTsumo, scoreRes);
+  }
+
+  // 途中流局 (九種九牌・四風連打・四家立直・四槓散了): 点数移動なし、親は連荘
+  function handleInterruptedRyukyoku(reason) {
+    clearTimeout(game.turnTimer);
+    hideActionBar();
+    game.pendingActions = null;
+    game.lastRoundRenchan = true;
+    showGameToast(`流局（${reason}）`, 'orange');
+
+    if (!DOM.gameResultModal) return;
+    DOM.resultModalTitle.textContent = `💨 途中流局（${reason}）`;
+    DOM.resultWinnerAvatar.textContent = '⚖️';
+    DOM.resultWinnerName.textContent = reason;
+    DOM.resultAgariType.textContent = '点数移動なし • 親は連荘します';
+    DOM.resultHandTiles.innerHTML = '';
+    DOM.resultDoraTiles.innerHTML = '';
+    DOM.resultYakuList.innerHTML = '<li class="yaku-badge-item">途中流局のためノーテン罰符はありません</li>';
+    DOM.resultScorePoints.textContent = '流局';
+    DOM.resultScoreRank.textContent = '親連荘';
+    DOM.resultScoreDetails.textContent = `次局は ${game.honba + 1} 本場 • 供託 ${game.riichiSticks * 1000}点は次局へ持ち越し`;
+
+    DOM.gameResultModal.classList.remove('hidden');
   }
 
   function handleRyukyoku() {
@@ -1662,6 +2045,9 @@
     if (game.playerCount > 1) renderEnemyHand(1, DOM.handShimocha);
     if (game.playerCount > 2) renderEnemyHand(2, DOM.handToimen);
     if (game.playerCount > 3) renderEnemyHand(3, DOM.handKamicha);
+    if (game.playerCount > 1) renderEnemyMelds(1, DOM.meldsShimocha);
+    if (game.playerCount > 2) renderEnemyMelds(2, DOM.meldsToimen);
+    if (game.playerCount > 3) renderEnemyMelds(3, DOM.meldsKamicha);
 
     // 自分手牌
     renderPlayerHand();
@@ -1753,6 +2139,31 @@
     }
   }
 
+  // 敵の副露 (鳴き) を専用枠に描画する。暗槓は両端を伏せる
+  function renderEnemyMelds(playerIdx, container) {
+    if (!container) return;
+    const player = game.players[playerIdx];
+    if (!player) return;
+    container.innerHTML = '';
+    player.melds.forEach(m => {
+      const meldWrap = document.createElement('div');
+      meldWrap.className = 'meld-group';
+      if (m.type === 'ankan' && m.tiles.length === 4) {
+        const back1 = document.createElement('div');
+        back1.className = 'mj-tile tile-back';
+        meldWrap.appendChild(back1);
+        meldWrap.appendChild(createTileDom(m.tiles[1], true));
+        meldWrap.appendChild(createTileDom(m.tiles[2], true));
+        const back2 = document.createElement('div');
+        back2.className = 'mj-tile tile-back';
+        meldWrap.appendChild(back2);
+      } else {
+        m.tiles.forEach(t => meldWrap.appendChild(createTileDom(t, true)));
+      }
+      container.appendChild(meldWrap);
+    });
+  }
+
   function renderKawa(playerIdx, container) {
     if (!container) return;
     const player = game.players[playerIdx];
@@ -1835,6 +2246,7 @@
       DOM.btnActionPon.style.display = 'none';
       DOM.btnActionChi.style.display = 'none';
       DOM.btnActionKan.style.display = 'none';
+      if (DOM.btnActionRyukyoku) DOM.btnActionRyukyoku.style.display = 'none';
     }
   }
 
