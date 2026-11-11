@@ -538,14 +538,14 @@ body.mat-theme {
   position: relative;
 }
 
-/* 萬子スタイル（極太・高コントラスト深紅） */
+/* 萬子スタイル（墨色の数字＋赤の萬・毛筆寄りの明朝書体） */
 .man-text,
 .tile-man-graphic {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-family: 'Zen Old Mincho', 'Noto Serif JP', 'Songti SC', serif;
+  font-family: 'Zen Old Mincho', 'Hiragino Mincho ProN', 'Hiragino Mincho Pro', 'YuMincho', 'Yu Mincho', 'Noto Serif JP', 'Songti SC', serif;
   font-weight: 900;
   line-height: 0.95;
   text-align: center;
@@ -576,7 +576,7 @@ body.mat-theme {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Zen Old Mincho', 'Noto Serif JP', 'Songti SC', serif;
+  font-family: 'Zen Old Mincho', 'Hiragino Mincho ProN', 'Hiragino Mincho Pro', 'YuMincho', 'Yu Mincho', 'Noto Serif JP', 'Songti SC', serif;
   font-size: 1.55rem;
   font-weight: 900;
   text-align: center;
@@ -584,26 +584,7 @@ body.mat-theme {
   filter: drop-shadow(0 0.5px 0.5px rgba(255, 255, 255, 0.85));
 }
 
-/* 白（伝統の二重枠線：画面上で確実に白牌と判別可能） */
-.haku-frame,
-.tile-haku-box {
-  width: 72%;
-  height: 74%;
-  border: 2.5px solid #64748b;
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.95), 0 1px 2px rgba(0, 0, 0, 0.15);
-  background: rgba(255, 255, 255, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.haku-inner-rect {
-  width: 80%;
-  height: 80%;
-  border: 1px dashed rgba(100, 116, 139, 0.45);
-  border-radius: 2px;
-}
+/* 白は無地のため専用スタイルなし（古典標準セットの図柄どおり。2026-11-11 ユーザー指定で二重枠を廃止） */
 
 /* 筒子・索子 SVGグラフィック */
 .pin-grid,
@@ -3578,7 +3559,6 @@ body.mat-theme {
   .jibun-tiles-row .man-num { font-size: 0.6rem; }
   .jibun-tiles-row .man-kanji { font-size: 0.55rem; }
   .jibun-tiles-row .ji-text { font-size: 0.78rem; }
-  .jibun-tiles-row .haku-frame { border-width: 1.5px; }
   .jibun-tiles-row .red-dot-badge {
     width: 5px;
     height: 5px;

@@ -100,12 +100,8 @@ function renderTileHtml(tileCode, options = {}) {
     innerGraphic = renderSouGraphic(def.num, def.isRed);
   } else if (def.type === 'honor') {
     if (def.num === 5) {
-      // 白（気品ある銀縁の二重枠線：視認性とリアリティを両立）
-      innerGraphic = `
-        <div class="haku-frame tile-haku-box">
-          <span class="haku-inner-rect"></span>
-        </div>
-      `;
+      // 白は無地（古典標準セットの図柄どおり。2026-11-11 ユーザー指定）
+      innerGraphic = '';
     } else {
       innerGraphic = `
         <div class="ji-text tile-honor-graphic" style="color: ${def.color};">
@@ -134,13 +130,21 @@ function renderPinGraphic(num, isRed) {
   const greenColor = isRed ? '#dc2626' : '#15803d';
 
   if (num === 1) {
-    // 一筒（豪華な菊花紋章ジュエル・特大センタードット）
+    // 一筒（古典セット倣い: 濃紺の外周帯に多色の花弁ドット＋装飾輪＋中心ジュエル）
+    const petalColors = ['#ffffff', '#f59e0b', '#ffffff', '#93c5fd'];
+    const petals = Array.from({ length: 12 }, (_, i) => {
+      const a = (Math.PI * 2 * i) / 12;
+      const px = (50 + 41.5 * Math.cos(a)).toFixed(1);
+      const py = (50 + 41.5 * Math.sin(a)).toFixed(1);
+      return `<circle cx="${px}" cy="${py}" r="2.1" fill="${petalColors[i % 4]}" opacity="0.9" />`;
+    }).join('');
     return `
       <div class="pin-grid pin-1">
         <svg viewBox="0 0 100 100" class="pin-svg-big">
-          <!-- 外周菊花リング -->
-          <circle cx="50" cy="50" r="44" fill="${redColor}" stroke="#991b1b" stroke-width="2" />
-          <circle cx="50" cy="50" r="39" fill="#ffffff" />
+          <!-- 外周リング（濃紺帯＋花弁ドット） -->
+          <circle cx="50" cy="50" r="44" fill="#1e3a5f" stroke="#172554" stroke-width="2" />
+          ${petals}
+          <circle cx="50" cy="50" r="38" fill="#ffffff" />
           <!-- 緑の装飾花弁 -->
           <circle cx="50" cy="50" r="33" fill="${greenColor}" stroke="#14532d" stroke-width="1.5" />
           <circle cx="50" cy="50" r="23" fill="#ffffff" />
@@ -155,22 +159,24 @@ function renderPinGraphic(num, isRed) {
   // 2〜9筒のドット配置（外周リング＋内玉の本格彫り込み表現）
   const coords = {
     2: [{ x: 50, y: 28, c: blueColor }, { x: 50, y: 72, c: greenColor }],
-    3: [{ x: 26, y: 26, c: blueColor }, { x: 50, y: 50, c: redColor }, { x: 74, y: 74, c: greenColor }],
-    4: [{ x: 30, y: 30, c: blueColor }, { x: 70, y: 30, c: greenColor }, { x: 30, y: 70, c: greenColor }, { x: 70, y: 70, c: blueColor }],
-    5: [{ x: 28, y: 28, c: blueColor }, { x: 72, y: 28, c: greenColor }, { x: 50, y: 50, c: redColor }, { x: 28, y: 72, c: greenColor }, { x: 72, y: 72, c: blueColor }],
-    6: [{ x: 32, y: 25, c: greenColor }, { x: 68, y: 25, c: greenColor }, { x: 32, y: 50, c: redColor }, { x: 68, y: 50, c: redColor }, { x: 32, y: 75, c: redColor }, { x: 68, y: 75, c: redColor }],
-    7: [{ x: 25, y: 20, c: greenColor }, { x: 50, y: 30, c: greenColor }, { x: 75, y: 40, c: greenColor }, { x: 32, y: 64, c: redColor }, { x: 68, y: 64, c: redColor }, { x: 32, y: 84, c: redColor }, { x: 68, y: 84, c: redColor }],
+    // 古典セットの配色: 三筒=両端青+中央赤 / 四筒=全青 / 五筒=四隅青+中央赤 / 六筒=上2青・下4赤 / 七筒=斜め3青・下4赤
+    3: [{ x: 26, y: 26, c: blueColor }, { x: 50, y: 50, c: redColor }, { x: 74, y: 74, c: blueColor }],
+    4: [{ x: 30, y: 30, c: blueColor }, { x: 70, y: 30, c: blueColor }, { x: 30, y: 70, c: blueColor }, { x: 70, y: 70, c: blueColor }],
+    5: [{ x: 28, y: 28, c: blueColor }, { x: 72, y: 28, c: blueColor }, { x: 50, y: 50, c: redColor }, { x: 28, y: 72, c: blueColor }, { x: 72, y: 72, c: blueColor }],
+    6: [{ x: 32, y: 25, c: blueColor }, { x: 68, y: 25, c: blueColor }, { x: 32, y: 50, c: redColor }, { x: 68, y: 50, c: redColor }, { x: 32, y: 75, c: redColor }, { x: 68, y: 75, c: redColor }],
+    7: [{ x: 25, y: 20, c: blueColor }, { x: 50, y: 30, c: blueColor }, { x: 75, y: 40, c: blueColor }, { x: 32, y: 64, c: redColor }, { x: 68, y: 64, c: redColor }, { x: 32, y: 84, c: redColor }, { x: 68, y: 84, c: redColor }],
     8: [{ x: 32, y: 20, c: blueColor }, { x: 68, y: 20, c: blueColor }, { x: 32, y: 40, c: blueColor }, { x: 68, y: 40, c: blueColor }, { x: 32, y: 60, c: blueColor }, { x: 68, y: 60, c: blueColor }, { x: 32, y: 80, c: blueColor }, { x: 68, y: 80, c: blueColor }],
-    9: [{ x: 28, y: 24, c: blueColor }, { x: 50, y: 24, c: redColor }, { x: 72, y: 24, c: blueColor }, { x: 28, y: 50, c: blueColor }, { x: 50, y: 50, c: redColor }, { x: 72, y: 50, c: blueColor }, { x: 28, y: 76, c: blueColor }, { x: 50, y: 76, c: redColor }, { x: 72, y: 76, c: blueColor }]
+    // 九筒は伝統的に行ごとに色が分かれる図柄: 上段=青・中段=赤・下段=緑の横縞として即読できるようにする
+    9: [{ x: 28, y: 24, c: blueColor }, { x: 50, y: 24, c: blueColor }, { x: 72, y: 24, c: blueColor }, { x: 28, y: 50, c: redColor }, { x: 50, y: 50, c: redColor }, { x: 72, y: 50, c: redColor }, { x: 28, y: 76, c: greenColor }, { x: 50, y: 76, c: greenColor }, { x: 72, y: 76, c: greenColor }]
   };
 
   const currentCoords = coords[num] || [];
   const svgCircles = currentCoords.map(d => `
     <g transform="translate(${d.x}, ${d.y})">
       <!-- 外枠リング -->
-      <circle cx="0" cy="0" r="12" fill="none" stroke="${d.c}" stroke-width="2.8" />
-      <!-- 中心丸 -->
-      <circle cx="0" cy="0" r="7.5" fill="${d.c}" />
+      <circle cx="0" cy="0" r="12" fill="none" stroke="${d.c}" stroke-width="3.1" />
+      <!-- 中心丸（リングとの間の溝を広げ、小表示でも輪と玉が分離して見えるように） -->
+      <circle cx="0" cy="0" r="7.2" fill="${d.c}" />
       <!-- 光沢ハイライト -->
       <circle cx="-2.5" cy="-2.5" r="2" fill="#ffffff" opacity="0.75" />
     </g>
@@ -189,7 +195,8 @@ function renderPinGraphic(num, isRed) {
  * 索子 (Sou) のバンブーパターンSVG（鮮明な竹節・極太ハイコントラスト）
  */
 function renderSouGraphic(num, isRed) {
-  const gColor = isRed ? '#dc2626' : '#15803d';
+  const gColor = isRed ? '#dc2626' : '#16a34a';
+  const bColor = isRed ? '#dc2626' : '#1d4ed8';
   const rColor = '#dc2626';
 
   if (num === 1) {
@@ -235,25 +242,36 @@ function renderSouGraphic(num, isRed) {
 
   // 2〜9索の竹スティック
   const stickMap = {
-    2: [{ x: 50, y: 26, c: gColor }, { x: 50, y: 74, c: gColor }],
+    // 二索は古典配色で上段=青・下段=緑
+    2: [{ x: 50, y: 26, c: bColor }, { x: 50, y: 74, c: gColor }],
     3: [{ x: 50, y: 24, c: gColor }, { x: 30, y: 72, c: gColor }, { x: 70, y: 72, c: gColor }],
     4: [{ x: 30, y: 30, c: gColor }, { x: 70, y: 30, c: gColor }, { x: 30, y: 70, c: gColor }, { x: 70, y: 70, c: gColor }],
     5: [{ x: 26, y: 26, c: gColor }, { x: 74, y: 26, c: gColor }, { x: 50, y: 50, c: rColor }, { x: 26, y: 74, c: gColor }, { x: 74, y: 74, c: gColor }],
     6: [{ x: 28, y: 30, c: gColor }, { x: 50, y: 30, c: gColor }, { x: 72, y: 30, c: gColor }, { x: 28, y: 70, c: gColor }, { x: 50, y: 70, c: gColor }, { x: 72, y: 70, c: gColor }],
-    7: [{ x: 50, y: 20, c: rColor }, { x: 28, y: 46, c: gColor }, { x: 50, y: 46, c: gColor }, { x: 72, y: 46, c: gColor }, { x: 28, y: 76, c: gColor }, { x: 50, y: 76, c: gColor }, { x: 72, y: 76, c: gColor }],
-    8: [{ x: 26, y: 20, c: gColor }, { x: 42, y: 20, c: gColor }, { x: 58, y: 20, c: gColor }, { x: 74, y: 20, c: gColor }, { x: 26, y: 74, c: gColor }, { x: 42, y: 74, c: gColor }, { x: 58, y: 74, c: gColor }, { x: 74, y: 74, c: gColor }],
+    7: [{ x: 50, y: 18, c: rColor }, { x: 28, y: 47, c: gColor }, { x: 50, y: 47, c: gColor }, { x: 72, y: 47, c: gColor }, { x: 28, y: 77, c: gColor }, { x: 50, y: 77, c: gColor }, { x: 72, y: 77, c: gColor }],
+    // 八索は伝統図柄: 上段=ハの字ペア×2（上端が寄り下端が開く斜め配置）、
+    // 下段=その上下反転ペア×2（上端が開き下端が寄る）。古典セット同様に上下とも斜めペアで構成し、
+    // 等間隔グリッド（6索・9索と同系統のシルエット）と違いシルエットで判別できる形にする
+    8: [
+      { x: 22.5, y: 23, c: gColor, r: 16 }, { x: 35.5, y: 23, c: gColor, r: -16 },
+      { x: 64.5, y: 23, c: gColor, r: 16 }, { x: 77.5, y: 23, c: gColor, r: -16 },
+      { x: 22.5, y: 72, c: gColor, r: -16 }, { x: 35.5, y: 72, c: gColor, r: 16 },
+      { x: 64.5, y: 72, c: gColor, r: -16 }, { x: 77.5, y: 72, c: gColor, r: 16 }
+    ],
     9: [{ x: 28, y: 22, c: gColor }, { x: 50, y: 22, c: rColor }, { x: 72, y: 22, c: gColor }, { x: 28, y: 50, c: gColor }, { x: 50, y: 50, c: rColor }, { x: 72, y: 50, c: gColor }, { x: 28, y: 78, c: gColor }, { x: 50, y: 78, c: rColor }, { x: 72, y: 78, c: gColor }]
   };
 
   const list = stickMap[num] || [];
   const stickElements = list.map(s => `
-    <g transform="translate(${s.x}, ${s.y})">
+    <g transform="translate(${s.x}, ${s.y})${s.r ? ` rotate(${s.r})` : ''}">
       <!-- 竹の幹（厚みと丸みのあるバー） -->
-      <rect x="-5" y="-13" width="10" height="26" rx="3.5" fill="${s.c}" stroke="rgba(0,0,0,0.3)" stroke-width="1.2"/>
-      <!-- 竹の節（白帯とインデント） -->
-      <rect x="-6" y="-2.5" width="12" height="5" rx="1.5" fill="#ffffff" opacity="0.95" stroke="rgba(0,0,0,0.2)" stroke-width="0.8"/>
+      <rect x="-5" y="-13" width="10" height="26" rx="3.5" fill="${s.c}" stroke="rgba(0,0,0,0.35)" stroke-width="1.2"/>
+      <!-- 円筒ハイライト（1本ごとの分離感を持たせる） -->
+      <rect x="-3.2" y="-10.5" width="2.6" height="21" rx="1.3" fill="#ffffff" opacity="0.20"/>
+      <!-- 竹の節（白帯: 本体からの張り出しを抑え、輪郭線で段差を明示） -->
+      <rect x="-5.5" y="-2.8" width="11" height="5.6" rx="1.6" fill="#ffffff" opacity="0.95" stroke="rgba(0,0,0,0.25)" stroke-width="0.8"/>
       <!-- 節の中央ライン -->
-      <line x1="-4" y1="0" x2="4" y2="0" stroke="${s.c}" stroke-width="1.2"/>
+      <line x1="-4" y1="0" x2="4" y2="0" stroke="${s.c}" stroke-width="1.4"/>
     </g>
   `).join('');
 
