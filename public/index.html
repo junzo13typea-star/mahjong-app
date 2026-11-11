@@ -603,6 +603,8 @@
           </div>
           <div class="game-actions-quick">
             <button id="btnNewGame" class="btn-ghost" title="対局を最初からやり直す">🔄 新規対局</button>
+            <button id="btnResumeGame" class="btn-ghost" style="display: none;" title="前回の対局の途中から再開する">⏯️ つづきから</button>
+            <button id="btnShowStats" class="btn-ghost" title="通算成績を表示する">📊 成績</button>
             <button id="btnToggleAssist" class="btn-ghost" title="待ち牌・シャンテン数アシスト表示の切替">💡 アシスト: ON</button>
           </div>
         </div>
@@ -839,6 +841,20 @@
         </div>
         <div class="modal-footer">
           <button id="btnNextRound" class="btn-primary btn-lg" style="width: 100%;">次の局へ進む ➔</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 対局成績モーダル -->
+    <div id="statsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="statsModalTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="statsModalTitle" class="modal-title">📊 対局成績</h3>
+          <button id="btnCloseStats" class="btn-close" aria-label="成績を閉じる">×</button>
+        </div>
+        <div class="modal-body" id="statsBody"></div>
+        <div class="modal-footer">
+          <button id="btnResetStats" class="btn-ghost">成績をリセット</button>
         </div>
       </div>
     </div>

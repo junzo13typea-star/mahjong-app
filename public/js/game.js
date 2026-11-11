@@ -14,6 +14,7 @@
   const game = {
     isInitialized: false,
     isActive: false,
+    roundOver: false,    // 局終了が確定済みか (終了処理の二重発火ガード)
 
     // ルール設定
     playerCount: 4,      // 4: 四人麻雀, 3: 三人麻雀 (サンマ)
@@ -121,6 +122,8 @@
       turnIndicator: document.getElementById('turnIndicator'),
       btnNewGame: document.getElementById('btnNewGame'),
       btnToggleAssist: document.getElementById('btnToggleAssist'),
+      btnResumeGame: document.getElementById('btnResumeGame'),
+      btnShowStats: document.getElementById('btnShowStats'),
 
       // スコア・ステータス
       seatToimen: document.getElementById('seatToimen'),
@@ -196,6 +199,12 @@
       resultScoreRank: document.getElementById('resultScoreRank'),
       resultScoreDetails: document.getElementById('resultScoreDetails'),
       btnNextRound: document.getElementById('btnNextRound'),
+
+      // 成績モーダル
+      statsModal: document.getElementById('statsModal'),
+      statsBody: document.getElementById('statsBody'),
+      btnCloseStats: document.getElementById('btnCloseStats'),
+      btnResetStats: document.getElementById('btnResetStats'),
 
       // カスタム確認ダイアログ
       confirmModal: document.getElementById('confirmModal'),
@@ -282,6 +291,282 @@
     update3DView();
   }
 
+  // ---------- 成績記録 (localStorage・プレイヤー本人の通算成績) ----------
+  const STATS_KEY = 'mahjong_stats_v1';
+  // 終局モーダルが再表示されても二重に数えないための対局単位ガード
+  let statsMatchCounted = false;
+
+  function defaultStats() {
+    return {
+      games: 0,          // 完了した対局数 (半荘/東風)
+      rounds: 0,         // 総局数
+      rankCounts: [0, 0, 0, 0], // 最終順位の回数 [1位, 2位, 3位, 4位] (3人は4位が常に0)
+      wins: 0,           // 和了回数
+      winsTsumo: 0,      // うちツモ
+      winsRon: 0,        // うちロン (槍槓・ダブロンでの和了を含む)
+      dealIns: 0,        // 放銃回数
+      riichi: 0,         // リーチ回数
+      ryukyoku: 0,       // 流局回数 (荒野流局・途中流局)
+      playerDiscards: 0  // 総打牌数 (放銃率の分母)
+    };
+  }
+
+  function readStats() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        const raw = localStorage.getItem(STATS_KEY);
+        if (raw) {
+          const s = Object.assign(defaultStats(), JSON.parse(raw));
+          if (!Array.isArray(s.rankCounts) || s.rankCounts.length !== 4) {
+            s.rankCounts = [0, 0, 0, 0];
+          }
+          return s;
+        }
+      }
+    } catch (e) { /* 読めない環境では空の成績として扱う */ }
+    return defaultStats();
+  }
+
+  function writeStats(s) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem(STATS_KEY, JSON.stringify(s));
+      }
+    } catch (e) { /* 保存できない環境では静かに諦める */ }
+  }
+
+  function bumpStats(mutator) {
+    const s = readStats();
+    mutator(s);
+    writeStats(s);
+  }
+
+  function renderStatsBody() {
+    if (!DOM.statsBody) return;
+    const s = readStats();
+    if (s.games === 0 && s.rounds === 0) {
+      DOM.statsBody.innerHTML = '<p class="stats-empty">まだ記録がありません。対局を最後まで終えると、ここに成績が貯まっていきます。</p>';
+      return;
+    }
+    const pct = (num, den) => den > 0 ? `${(num / den * 100).toFixed(1)}%` : '—';
+    const avgRank = s.games > 0
+      ? (s.rankCounts.reduce((sum, c, i) => sum + c * (i + 1), 0) / s.games).toFixed(2)
+      : '—';
+    const rankText = s.rankCounts
+      .map((c, i) => `${i + 1}位 ${c}回`)
+      .filter((_, i) => s.games === 0 || i < game.playerCount || s.rankCounts[i] > 0)
+      .join(' / ');
+    const item = (label, value, sub) => `
+      <div class="stats-item">
+        <div class="stats-label">${label}</div>
+        <div class="stats-value">${value}</div>
+        ${sub ? `<div class="stats-sub">${sub}</div>` : ''}
+      </div>`;
+    DOM.statsBody.innerHTML = `
+      <div class="stats-grid">
+        ${item('対局数', `${s.games} 回`, `総局数 ${s.rounds} 局`)}
+        ${item('平均順位', avgRank, rankText)}
+        ${item('トップ率', pct(s.rankCounts[0], s.games), `1位 ${s.rankCounts[0]} 回`)}
+        ${item('和了率', pct(s.wins, s.rounds), `${s.wins} 回 (ツモ ${s.winsTsumo} / ロン ${s.winsRon})`)}
+        ${item('放銃率', pct(s.dealIns, s.playerDiscards), `${s.dealIns} 回 / 打牌 ${s.playerDiscards} 回`)}
+        ${item('リーチ率', pct(s.riichi, s.rounds), `${s.riichi} 回`)}
+        ${item('流局', `${s.ryukyoku} 回`, '')}
+      </div>
+      <p class="stats-note">和了率・リーチ率は総局数ベース、放銃率は総打牌数ベースです。</p>`;
+  }
+
+  function openStatsModal() {
+    renderStatsBody();
+    if (DOM.statsModal) DOM.statsModal.classList.remove('hidden');
+  }
+
+  function closeStatsModal() {
+    if (DOM.statsModal) DOM.statsModal.classList.add('hidden');
+  }
+
+  // ---------- 対局の途中保存 / 再開 (localStorage) ----------
+  // 保存は「復元可能な安定点」でのみ行う:
+  //   turn        … ツモ直後 (自分の判断待ち / CPUの手番開始)。カン後の嶺上ツモも含む
+  //   cpuDiscard  … CPUが鳴いた直後の打牌待ち
+  //   playerCall  … プレイヤーがポン/チーした直後の打牌待ち
+  //   discard     … プレイヤーの応答待ち (ロン/ポン/チー/パス判断中)
+  // 槍槓の応答待ちの瞬間は保存せず、直前のチェックポイントから再開する。
+  const SAVE_KEY = 'mahjong_game_save_v1';
+  // ページ読み込み時に残っていたセーブを「つづきから」として提示するか
+  let saveOfferPending = false;
+
+  function readRawGameSave() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        return localStorage.getItem(SAVE_KEY);
+      }
+    } catch (e) { /* 読めない環境ではセーブなしとして扱う */ }
+    return null;
+  }
+
+  function writeRawGameSave(raw) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        if (raw) localStorage.setItem(SAVE_KEY, raw);
+        else localStorage.removeItem(SAVE_KEY);
+      }
+    } catch (e) { /* 保存できない環境では静かに諦める */ }
+  }
+
+  function clearGameSave() {
+    writeRawGameSave(null);
+  }
+
+  function readGameSave() {
+    const raw = readRawGameSave();
+    if (!raw) return null;
+    try {
+      const data = JSON.parse(raw);
+      if (!data || data.v !== 1 || !Array.isArray(data.players)) return null;
+      if (data.players.length !== data.playerCount) return null;
+      return data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function hasGameSave() {
+    return readGameSave() !== null;
+  }
+
+  function updateResumeButton() {
+    if (DOM.btnResumeGame) {
+      DOM.btnResumeGame.style.display = (saveOfferPending && hasGameSave()) ? '' : 'none';
+    }
+  }
+
+  function serializePlayer(p) {
+    return {
+      idx: p.idx, name: p.name, avatar: p.avatar, score: p.score, seatWind: p.seatWind,
+      hand: [...p.hand], tsumoTile: p.tsumoTile,
+      kawa: p.kawa.map(k => ({ ...k })),
+      melds: p.melds.map(m => ({ ...m, tiles: [...m.tiles] })),
+      isRiichi: p.isRiichi, isDoubleRiichi: p.isDoubleRiichi,
+      ippatsu: p.ippatsu, ippatsuDeclarationPending: p.ippatsuDeclarationPending,
+      isMenzen: p.isMenzen, furiten: p.furiten, tempFuriten: p.tempFuriten,
+      riichiFuriten: p.riichiFuriten, discardCount: p.discardCount,
+      kuikaeForbidden: p.kuikaeForbidden ? [...p.kuikaeForbidden] : null,
+      lastDrawWasRinshan: p.lastDrawWasRinshan,
+      lastDrawSeq: p.lastDrawSeq || 0, drawSeqRendered: p.drawSeqRendered || 0
+    };
+  }
+
+  function saveGameCheckpoint(phase) {
+    try {
+      if (!game.players || game.players.length !== game.playerCount) return;
+      const data = {
+        v: 1,
+        phase,
+        savedAt: Date.now(),
+        playerCount: game.playerCount,
+        matchLength: game.matchLength,
+        is3D: game.is3D,
+        isAssisting: game.isAssisting,
+        rules: { ...game.rules },
+        roundWind: game.roundWind,
+        roundNum: game.roundNum,
+        dealerIdx: game.dealerIdx,
+        honba: game.honba,
+        riichiSticks: game.riichiSticks,
+        discardSeq: game.discardSeq,
+        kanCount: game.kanCount,
+        drawSeq: game.drawSeq || 0,
+        wall: [...game.wall],
+        deadWall: [...game.deadWall],
+        doraIndicators: [...game.doraIndicators],
+        uraDoraIndicators: [...game.uraDoraIndicators],
+        currentTurn: game.currentTurn,
+        lastDrawnTile: game.lastDrawnTile,
+        lastDiscardedTile: game.lastDiscardedTile,
+        lastDiscarder: game.lastDiscarder,
+        pendingCpuRons: (game.pendingCpuRons || []).map(r => ({ idx: r.idx, scoreRes: r.scoreRes })),
+        pendingActions: (phase === 'discard' && game.pendingActions)
+          ? { ...game.pendingActions } : null,
+        players: game.players.map(serializePlayer)
+      };
+      writeRawGameSave(JSON.stringify(data));
+    } catch (e) { /* チェックポイント保存の失敗で対局を止めない */ }
+  }
+
+  function restoreGameSave() {
+    const data = readGameSave();
+    if (!data) return false;
+
+    clearTimeout(game.turnTimer);
+    hideActionBar();
+    closeResultModal();
+
+    game.playerCount = data.playerCount;
+    game.matchLength = data.matchLength;
+    game.is3D = !!data.is3D;
+    game.isAssisting = data.isAssisting !== false;
+    game.rules = {
+      akadora: !data.rules || data.rules.akadora !== false,
+      kuitan: !data.rules || data.rules.kuitan !== false,
+      kuikae: !data.rules || data.rules.kuikae !== false
+    };
+    game.roundWind = data.roundWind;
+    game.roundNum = data.roundNum;
+    game.dealerIdx = data.dealerIdx;
+    game.honba = data.honba;
+    game.riichiSticks = data.riichiSticks;
+    game.discardSeq = data.discardSeq;
+    game.kanCount = data.kanCount;
+    game.drawSeq = data.drawSeq || 0;
+    game.wall = [...data.wall];
+    game.deadWall = [...data.deadWall];
+    game.doraIndicators = [...data.doraIndicators];
+    game.uraDoraIndicators = [...data.uraDoraIndicators];
+    game.currentTurn = data.currentTurn;
+    game.lastDrawnTile = data.lastDrawnTile;
+    game.lastDiscardedTile = data.lastDiscardedTile;
+    game.lastDiscarder = data.lastDiscarder;
+    game.pendingCpuRons = (data.pendingCpuRons || []).map(r => ({ idx: r.idx, scoreRes: r.scoreRes }));
+    game.pendingActions = null;
+    game.justDiscarded = null;
+    game.roundOver = false;
+    game.kanDoraFlipPending = false;
+    game.dealPending = false;
+    game.players = data.players.map(p => Object.assign(createPlayer(p.idx, p.name, p.avatar, p.score), p));
+
+    adjustSeatsForPlayerCount();
+    syncSettingsUi();
+    renderBoard();
+    updatePlayerAssist();
+
+    // 保存したフェーズに応じて、その判断ポイントから再開する
+    if (data.phase === 'discard' && data.pendingActions) {
+      const pa = data.pendingActions;
+      const rebuilt = checkPlayerResponsesToDiscard(
+        game.players[0], pa.discarderIdx, pa.tile, game.pendingCpuRons.length > 0);
+      if (!rebuilt) {
+        // 状態がずれている場合はCPU側の解決を進めて対局を止めない
+        resolveCpuResponses(pa.discarderIdx, pa.tile);
+      }
+    } else if (data.phase === 'cpuDiscard') {
+      game.turnTimer = setTimeout(() => cpuDiscardAfterCall(game.currentTurn), 450);
+    } else if (game.currentTurn === 0) {
+      // turn (自分のツモ直後) はツモ時アクションを再提示。playerCall は打牌待ちのまま
+      if (data.phase === 'turn' && game.players[0].tsumoTile) {
+        checkPlayerTsumoActions(game.players[0].tsumoTile);
+      }
+    } else {
+      game.turnTimer = setTimeout(() => cpuExecuteTurn(game.currentTurn, game.lastDrawnTile), 450);
+    }
+
+    saveOfferPending = false;
+    updateResumeButton();
+    // 再開した状態をそのまま次のチェックポイントとして保存し直す
+    saveGameCheckpoint(data.phase);
+    showGameToast('対局を再開しました', 'gold');
+    return true;
+  }
+
   // ---------- カスタム確認ダイアログ (ネイティブ confirm の置換) ----------
   let pendingConfirmAction = null;
 
@@ -311,7 +596,24 @@
     setupEvents();
     syncSettingsUi();
     game.isInitialized = true;
+    // 前回の途中セーブがあれば、自動開始される新規対局に消されないよう退避して戻す
+    const pendingSave = readRawGameSave();
     startNewGame();
+    if (pendingSave && readGameSaveFromRaw(pendingSave)) {
+      writeRawGameSave(pendingSave);
+      saveOfferPending = true;
+    }
+    updateResumeButton();
+  }
+
+  function readGameSaveFromRaw(raw) {
+    try {
+      const data = JSON.parse(raw);
+      return !!(data && data.v === 1 && Array.isArray(data.players) &&
+        data.players.length === data.playerCount);
+    } catch (e) {
+      return false;
+    }
   }
 
   function setupEvents() {
@@ -415,6 +717,39 @@
       });
     }
 
+    // つづきから (途中セーブの復元)
+    if (DOM.btnResumeGame) {
+      DOM.btnResumeGame.addEventListener('click', () => {
+        if (!restoreGameSave()) {
+          saveOfferPending = false;
+          updateResumeButton();
+          showGameToast('再開できる対局データがありませんでした', 'orange');
+        }
+      });
+    }
+
+    // 成績モーダル
+    if (DOM.btnShowStats) {
+      DOM.btnShowStats.addEventListener('click', openStatsModal);
+    }
+    if (DOM.btnCloseStats) {
+      DOM.btnCloseStats.addEventListener('click', closeStatsModal);
+    }
+    if (DOM.statsModal) {
+      DOM.statsModal.addEventListener('click', (e) => {
+        if (e && e.target === DOM.statsModal) closeStatsModal();
+      });
+    }
+    if (DOM.btnResetStats) {
+      DOM.btnResetStats.addEventListener('click', () => {
+        showConfirmDialog('成績データをすべてリセットしますか？', () => {
+          writeStats(defaultStats());
+          renderStatsBody();
+          showGameToast('成績をリセットしました');
+        });
+      });
+    }
+
     // 確認ダイアログのボタン配線 (キャンセルでは何も起きない)
     if (DOM.btnConfirmOk) {
       DOM.btnConfirmOk.addEventListener('click', () => {
@@ -484,6 +819,11 @@
    */
   function startNewGame() {
     clearTimeout(game.turnTimer);
+    // 新規対局では前対局の途中セーブと成績ガードをリセットする
+    clearGameSave();
+    saveOfferPending = false;
+    statsMatchCounted = false;
+    updateResumeButton();
     game.roundWind = '1z'; // 東場から開始
     game.roundNum = 0;
     game.dealerIdx = 0;    // あなたが東1局の親
@@ -605,6 +945,7 @@
 
     game.discardSeq = 0;
     game.kanCount = 0;
+    game.roundOver = false;
     game.justDiscarded = null;
     game.dealPending = true;
     showDiceRoll();
@@ -702,12 +1043,14 @@
       sfx('select'); // 自分のツモ: 軽いクリック音
       updatePlayerAssist();
       checkPlayerTsumoActions(drawnTile);
+      saveGameCheckpoint('turn');
       return;
     }
 
     game.turnTimer = setTimeout(() => {
       cpuExecuteTurn(playerIdx, drawnTile);
     }, 450);
+    saveGameCheckpoint('turn');
   }
 
   function checkPlayerTsumoActions(drawnTile) {
@@ -872,6 +1215,7 @@
     renderBoard();
     updatePlayerAssist();
     checkPlayerTsumoActions(rinshan);
+    saveGameCheckpoint('turn');
   }
 
   // プレイヤーの暗槓・加槓 (ツモフェーズ)
@@ -1097,6 +1441,7 @@
     }
     player.score -= 1000;
     game.riichiSticks += 1;
+    if (playerIdx === 0) bumpStats(s => { s.riichi += 1; });
 
     sfx('riichi');
     showGameToast(`${player.name} が立直（リーチ）！`, 'gold');
@@ -1138,6 +1483,7 @@
 
     player.discardCount += 1;
     game.discardSeq += 1;
+    if (playerIdx === 0) bumpStats(s => { s.playerDiscards += 1; });
 
     // 喰い替え制限はこの1打牌で解除される
     player.kuikaeForbidden = null;
@@ -1247,10 +1593,19 @@
       handleAgari(winners[0].idx, loserIdx, tile, false, winners[0].scoreRes);
       return;
     }
+    if (game.roundOver) return; // 局終了処理は1回だけ
+    game.roundOver = true;
     // ダブロン/トリロン: 各和了者が放銃者から満額を受け取る。
     // 供託リーチ棒は放銃者から時計回りに最も近い和了者 (頭) が全て得る。
     const n = game.playerCount;
     winners.sort((a, b) => ((a.idx - loserIdx + n) % n) - ((b.idx - loserIdx + n) % n));
+    // ダブロン/トリロンも1局として成績を記録する (単独ロンは handleAgari 側)
+    clearGameSave();
+    bumpStats(s => {
+      s.rounds += 1;
+      if (winners.some(w => w.idx === 0)) { s.wins += 1; s.winsRon += 1; }
+      if (loserIdx === 0) s.dealIns += 1;
+    });
     const loser = game.players[loserIdx];
     const sticksBonus = game.riichiSticks * 1000;
     winners.forEach((w, i) => {
@@ -1355,6 +1710,7 @@
       DOM.btnActionPass.style.display = 'inline-block';
       DOM.gameActionBar.style.display = 'flex';
 
+
       game.pendingActions = {
         type: 'discard',
         discarderIdx,
@@ -1384,6 +1740,7 @@
         DOM.actionBarContext.appendChild(createTileDom(tile, true));
         DOM.actionBarContext.style.display = 'inline-flex';
       }
+      saveGameCheckpoint('discard');
       return true;
     }
     return false;
@@ -1626,6 +1983,7 @@
     renderBoard();
     game.currentTurn = 0;
     updatePlayerAssist();
+    saveGameCheckpoint('playerCall');
   }
 
   function executePlayerChi(tile) {
@@ -1666,6 +2024,7 @@
       renderBoard();
       game.currentTurn = 0;
       updatePlayerAssist();
+      saveGameCheckpoint('playerCall');
     }
   }
 
@@ -1806,11 +2165,13 @@
       cpu.lastDrawWasRinshan = true;
       game.lastDrawnTile = rinshan;
       game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), 450);
+      saveGameCheckpoint('turn');
       return;
     }
 
     // ポン・チー後はそのCPUが打牌する
     game.turnTimer = setTimeout(() => cpuDiscardAfterCall(playerIdx), 450);
+    saveGameCheckpoint('cpuDiscard');
   }
 
   function cpuDiscardAfterCall(playerIdx) {
@@ -1884,6 +2245,7 @@
     game.lastDrawnTile = rinshan;
     renderBoard();
     game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), 450);
+    saveGameCheckpoint('turn');
   }
 
   // 加槓の追加牌に対する槍槓 (チャンカン) 応答を解決する。
@@ -1958,6 +2320,19 @@
   }
 
   function handleAgari(winnerIdx, loserIdx, winTile, isTsumo, scoreRes) {
+    if (game.roundOver) return; // 局終了処理は1回だけ
+    game.roundOver = true;
+    // 局が確定したので途中セーブは破棄し、成績を記録する
+    clearGameSave();
+    bumpStats(s => {
+      s.rounds += 1;
+      if (winnerIdx === 0) {
+        s.wins += 1;
+        if (isTsumo) s.winsTsumo += 1;
+        else s.winsRon += 1;
+      }
+      if (!isTsumo && loserIdx === 0) s.dealIns += 1;
+    });
     const winner = game.players[winnerIdx];
     // calculateScore の返却形式: points = { total, ron, oyaTsumo, koTsumo, honbaBonus }
     // oyaTsumo / koTsumo は「1人あたりの支払額」(本場分込み)、ron は本場込み総額
@@ -1990,8 +2365,12 @@
 
   // 途中流局 (九種九牌・四風連打・四家立直・四槓散了): 点数移動なし、親は連荘
   function handleInterruptedRyukyoku(reason) {
+    if (game.roundOver) return; // 局終了処理は1回だけ
+    game.roundOver = true;
     clearTimeout(game.turnTimer);
     hideActionBar();
+    clearGameSave();
+    bumpStats(s => { s.rounds += 1; s.ryukyoku += 1; });
     game.pendingActions = null;
     game.lastRoundRenchan = true;
     showGameToast(`流局（${reason}）`, 'orange');
@@ -2012,6 +2391,10 @@
   }
 
   function handleRyukyoku() {
+    if (game.roundOver) return; // 局終了処理は1回だけ
+    game.roundOver = true;
+    clearGameSave();
+    bumpStats(s => { s.rounds += 1; s.ryukyoku += 1; });
     showGameToast('流局（荒野流局）', 'orange');
 
     const tenpais = [];
@@ -2149,6 +2532,16 @@
 
   function showFinalGameSetModal() {
     const ranking = [...game.players].sort((a, b) => b.score - a.score);
+
+    // 対局成績を記録する (モーダル再表示で二重に数えない)
+    if (!statsMatchCounted) {
+      statsMatchCounted = true;
+      const myRank = ranking.findIndex(p => p.idx === 0);
+      bumpStats(s => {
+        s.games += 1;
+        if (myRank >= 0 && myRank < 4) s.rankCounts[myRank] += 1;
+      });
+    }
 
     DOM.resultModalTitle.textContent = '🏆 対局終了（終局）';
     DOM.resultWinnerAvatar.textContent = ranking[0].avatar;

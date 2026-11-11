@@ -2391,6 +2391,55 @@ body.mat-theme {
   color: #f59e0b;
 }
 
+/* 成績モーダル */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.stats-item {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.stats-label {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.stats-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+
+.stats-sub {
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  margin-top: 4px;
+}
+
+.stats-note {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin: 12px 0 0 0;
+  text-align: center;
+}
+
+.stats-empty {
+  color: #cbd5e1;
+  text-align: center;
+  margin: 8px 0;
+  line-height: 1.7;
+}
+
 .result-score-box {
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.3) 100%);
   border: 1px solid rgba(16, 185, 129, 0.4);
