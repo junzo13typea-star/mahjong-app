@@ -249,14 +249,14 @@ function renderSouGraphic(num, isRed) {
     5: [{ x: 26, y: 26, c: gColor }, { x: 74, y: 26, c: gColor }, { x: 50, y: 50, c: rColor }, { x: 26, y: 74, c: gColor }, { x: 74, y: 74, c: gColor }],
     6: [{ x: 28, y: 30, c: gColor }, { x: 50, y: 30, c: gColor }, { x: 72, y: 30, c: gColor }, { x: 28, y: 70, c: gColor }, { x: 50, y: 70, c: gColor }, { x: 72, y: 70, c: gColor }],
     7: [{ x: 50, y: 18, c: rColor }, { x: 28, y: 47, c: gColor }, { x: 50, y: 47, c: gColor }, { x: 72, y: 47, c: gColor }, { x: 28, y: 77, c: gColor }, { x: 50, y: 77, c: gColor }, { x: 72, y: 77, c: gColor }],
-    // 八索は伝統図柄: 上段=ハの字ペア×2（上端が寄り下端が開く斜め配置）、
-    // 下段=その上下反転ペア×2（上端が開き下端が寄る）。古典セット同様に上下とも斜めペアで構成し、
-    // 等間隔グリッド（6索・9索と同系統のシルエット）と違いシルエットで判別できる形にする
+    // 八索は伝統図柄（2026-11-11 ユーザー提示の図柄どおり）:
+    // 四隅に縦スティック4本、中央上部に∧型ペア、中央下部に∨型ペア（上下対称）。
+    // 中央に菱形の余白ができ、6索・9索のグリッドとシルエットで明確に区別できる
     8: [
-      { x: 22.5, y: 23, c: gColor, r: 16 }, { x: 35.5, y: 23, c: gColor, r: -16 },
-      { x: 64.5, y: 23, c: gColor, r: 16 }, { x: 77.5, y: 23, c: gColor, r: -16 },
-      { x: 22.5, y: 72, c: gColor, r: -16 }, { x: 35.5, y: 72, c: gColor, r: 16 },
-      { x: 64.5, y: 72, c: gColor, r: -16 }, { x: 77.5, y: 72, c: gColor, r: 16 }
+      { x: 22, y: 25, c: gColor }, { x: 78, y: 25, c: gColor },
+      { x: 42, y: 25, c: gColor, r: 29 }, { x: 58, y: 25, c: gColor, r: -29 },
+      { x: 22, y: 75, c: gColor }, { x: 78, y: 75, c: gColor },
+      { x: 42, y: 75, c: gColor, r: -29 }, { x: 58, y: 75, c: gColor, r: 29 }
     ],
     9: [{ x: 28, y: 22, c: gColor }, { x: 50, y: 22, c: rColor }, { x: 72, y: 22, c: gColor }, { x: 28, y: 50, c: gColor }, { x: 50, y: 50, c: rColor }, { x: 72, y: 50, c: gColor }, { x: 28, y: 78, c: gColor }, { x: 50, y: 78, c: rColor }, { x: 72, y: 78, c: gColor }]
   };

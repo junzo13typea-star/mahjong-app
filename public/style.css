@@ -1992,9 +1992,11 @@ body.mat-theme {
   min-height: 38px;
 }
 
-/* 対面の河は対面から見て左から (自分からは右から) 並ぶ */
+/* 対面の河: 本人から見て左から (自分からは右から) 並び、最初の列は卓中央側
+   (自分の画面では下段) に置かれて本人側 (上段) へ積み上がる */
 .kawa-toimen {
   flex-direction: row-reverse;
+  flex-wrap: wrap-reverse;
 }
 
 /* 左右の河: 6枚ごとのチャンク (列) を横に並べる帯 */
@@ -2016,9 +2018,16 @@ body.mat-theme {
   justify-content: flex-start;
 }
 
-/* 下家の河は本人の左 (自分からは下) から並び、列は卓中央へ伸びる */
-.kawa-shimocha {
+/* 上家の河: 列は卓中央側 (自分の画面では右) から本人側 (左) へ積む。
+   列の中は本人の左 = 自分からは上から並ぶ (.kawa-chunk の既定どおり) */
+.kawa-kamicha {
   flex-direction: row-reverse;
+}
+
+/* 下家の河: 最初の列は卓中央側 (自分の画面では左) に置かれ、本人側 (右) へ積む。
+   列の中は本人の左 = 自分からは下から並ぶ */
+.kawa-shimocha {
+  flex-direction: row;
 }
 
 .kawa-shimocha .kawa-chunk {
