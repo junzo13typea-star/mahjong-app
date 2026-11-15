@@ -606,6 +606,7 @@
             <button id="btnNewGame" class="btn-ghost" title="対局を最初からやり直す">🔄 新規対局</button>
             <button id="btnResumeGame" class="btn-ghost" style="display: none;" title="前回の対局の途中から再開する">⏯️ つづきから</button>
             <button id="btnShowStats" class="btn-ghost" title="通算成績を表示する">📊 成績</button>
+            <button id="btnShowKifu" class="btn-ghost" title="保存された牌譜を再生する">📼 牌譜</button>
             <button id="btnToggleAssist" class="btn-ghost" title="待ち牌・シャンテン数アシスト表示の切替">💡 アシスト: ON</button>
           </div>
         </div>
@@ -861,6 +862,17 @@
       </div>
     </div>
 
+    <!-- 牌譜モーダル -->
+    <div id="kifuModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="kifuModalTitle">
+      <div class="modal-card" style="max-width: min(96vw, 880px); width: 880px;">
+        <div class="modal-header">
+          <h3 id="kifuModalTitle" class="modal-title">📼 牌譜</h3>
+          <button id="btnCloseKifu" class="btn-close" aria-label="牌譜を閉じる">×</button>
+        </div>
+        <div class="modal-body" id="kifuBody"></div>
+      </div>
+    </div>
+
     <!-- 遊び方ヘルプモーダル -->
     <div id="helpModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle">
       <div class="modal-card help-card">
@@ -931,6 +943,7 @@
   <script src="js/score.js"></script>
   <script src="js/ocr.js"></script>
   <script src="js/sfx.js"></script>
+  <script src="js/kifu.js"></script>
   <script src="js/game.js"></script>
   <script src="js/app.js"></script>
   <script src="js/sw-update.js"></script>

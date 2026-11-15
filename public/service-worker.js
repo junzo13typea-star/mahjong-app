@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v24';
+const CACHE_NAME = 'mahjong-ai-v25';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS_TO_CACHE = [
   './js/score.js',
   './js/ocr.js',
   './js/sfx.js',
+  './js/kifu.js',
   './js/game.js',
   './js/app.js',
   './js/sw-update.js',

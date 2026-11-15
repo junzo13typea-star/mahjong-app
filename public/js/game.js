@@ -867,6 +867,7 @@
     const modeText = `${game.playerCount}人麻雀・${game.matchLength === 'tonpuu' ? '東風戦' : '半荘戦'}`;
     showGameToast(`新規対局開始: ${modeText}`, 'gold');
 
+    if (window.MahjongKifu) window.MahjongKifu.beginGame({ playerCount: game.playerCount, matchLength: game.matchLength, names: game.players.map(p => p.name) });
     startRound();
   }
 
@@ -975,6 +976,7 @@
 
     // 牌山生成（3人麻雀は萬子の2〜8を除外）
     buildWall();
+    if (window.MahjongKifu) window.MahjongKifu.startRound({ roundWind: game.roundWind, roundNum: game.roundNum, honba: game.honba, dealerIdx: game.dealerIdx, playerCount: game.playerCount, matchLength: game.matchLength, wall: [...game.wall], startScores: game.players.map(p => p.score) });
 
     // 王牌 14枚
     game.deadWall = game.wall.splice(game.wall.length - 14, 14);
@@ -1053,6 +1055,7 @@
     clearTimeout(game.turnTimer);
     game.currentTurn = playerIdx;
     game.lastDrawnTile = drawnTile;
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'draw', p: playerIdx, tile: drawnTile });
     game.drawSeq = (game.drawSeq || 0) + 1;
     const player = game.players[playerIdx];
     player.lastDrawSeq = game.drawSeq;
@@ -1240,6 +1243,7 @@
     player.tsumoTile = rinshan;
     player.lastDrawWasRinshan = true;
     game.lastDrawnTile = rinshan;
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'draw', p: player.idx, tile: rinshan, rinshan: true });
 
     renderBoard();
     updatePlayerAssist();
@@ -1258,6 +1262,7 @@
     remain.splice(idx, 1);
     player.hand = remain;
     player.kitaCount = (player.kitaCount || 0) + 1;
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'kita', p: 0 });
     showGameToast('北抜き！', 'blue');
 
     const rinshan = drawRinshanTile();
@@ -1269,6 +1274,7 @@
     player.tsumoTile = rinshan;
     player.lastDrawWasRinshan = false;
     game.lastDrawnTile = rinshan;
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'draw', p: 0, tile: rinshan, rinshan: true });
 
     renderBoard();
     updatePlayerAssist();
@@ -1289,6 +1295,7 @@
       const kanTiles = fullHand.filter(t => normTileCode(t) === opt.tile);
       player.hand = fullHand.filter(t => normTileCode(t) !== opt.tile);
       player.melds.push({ type: 'ankan', tiles: kanTiles });
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'ankan', p: 0, tile: opt.tile });
       showGameToast('暗槓（アンカン）！', 'blue');
     } else {
       // 加槓: ポンの刻子に手牌 (またはツモ牌) の1枚を加える
@@ -1300,6 +1307,7 @@
       player.hand = remain;
       meld.type = 'kan';
       meld.tiles = [...meld.tiles, added];
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'kakan', p: 0, tile: opt.tile });
       showGameToast('加槓（カカン）！', 'blue');
 
       // 槍槓チェック: CPUがこの追加牌でロンできる場合はロン解決が優先する
@@ -1334,6 +1342,7 @@
     if (removed.length < 3) return; // 安全策 (通常は到達しない)
 
     player.melds.push({ type: 'kan', tiles: [...removed, tile] });
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'minkan', p: 0, tile, from: game.lastDiscarder });
     player.isMenzen = false;
 
     // 鳴きが入ると全員の一発は消滅する
@@ -1439,11 +1448,13 @@
         if (sAfter <= sBefore) {
           cpu.hand = rest;
           cpu.kitaCount = (cpu.kitaCount || 0) + 1;
+          if (window.MahjongKifu) window.MahjongKifu.event({ t: 'kita', p: playerIdx });
           const rinshan = drawRinshanTile();
           if (!rinshan) { renderBoard(); return; }
           cpu.tsumoTile = rinshan;
           cpu.lastDrawWasRinshan = false;
           game.lastDrawnTile = rinshan;
+          if (window.MahjongKifu) window.MahjongKifu.event({ t: 'draw', p: playerIdx, tile: rinshan, rinshan: true });
           renderBoard();
           cpuExecuteTurn(playerIdx, rinshan);
           return;
@@ -1607,6 +1618,7 @@
 
     sfx('riichi');
     showGameToast(`${player.name} が立直（リーチ）！`, 'gold');
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'riichi', p: playerIdx });
     renderBoard();
   }
 
@@ -1622,6 +1634,7 @@
 
     clearTimeout(game.turnTimer);
     hideActionBar();
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'discard', p: playerIdx, tile, tsumogiri: !!isTsumogiri });
 
     if (isTsumogiri && player.tsumoTile === tile) {
       player.tsumoTile = null;
@@ -1777,6 +1790,7 @@
       game.players[w.idx].score += pts.ron + (i === 0 ? sticksBonus : 0);
     });
     game.riichiSticks = 0;
+    if (window.MahjongKifu) window.MahjongKifu.endRound({ type: 'ron', winners: winners.map(w => w.idx), loser: loserIdx, tile, scoresAfter: game.players.map(p => p.score) });
     game.lastRoundRenchan = winners.some(w => game.players[w.idx].seatWind === '1z');
     showMultiAgariModal(winners, loserIdx, tile);
   }
@@ -2140,6 +2154,7 @@
     }
 
     player.melds.push({ type: 'pon', tiles: [...removed, tile] });
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'pon', p: 0, tile, from: game.lastDiscarder });
     player.isMenzen = false;
 
     // 鳴きが入ると全員の一発は消滅する
@@ -2173,6 +2188,7 @@
       player.hand.splice(player.hand.indexOf(pair[1]), 1);
 
       player.melds.push({ type: 'chi', tiles: [pair[0], tile, pair[1]] });
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'chi', p: 0, tile, from: game.lastDiscarder, handTiles: [pair[0], pair[1]] });
       player.isMenzen = false;
 
       // 鳴きが入ると全員の一発は消滅する
@@ -2293,6 +2309,7 @@
       }
       if (removed.length < 2) { proceedToNextTurn(); return; }
       cpu.melds.push({ type: 'pon', tiles: [...removed, tile] });
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'pon', p: playerIdx, tile, from: game.lastDiscarder });
       if (game.rules.kuikae) cpu.kuikaeForbidden = [raw];
       showGameToast(`${cpu.name} ポン！`, 'blue');
     } else if (type === 'chi') {
@@ -2302,6 +2319,7 @@
       const t2 = cpu.hand[choice.ib];
       cpu.hand = cpu.hand.filter((_, i) => i !== choice.ia && i !== choice.ib);
       cpu.melds.push({ type: 'chi', tiles: [t1, tile, t2] });
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'chi', p: playerIdx, tile, from: game.lastDiscarder, handTiles: [t1, t2] });
       if (game.rules.kuikae) {
         const num = parseInt(raw[0], 10);
         const nums = [parseInt(normTileCode(t1)[0], 10), parseInt(normTileCode(t2)[0], 10), num];
@@ -2319,6 +2337,7 @@
       }
       if (removed.length < 3) { proceedToNextTurn(); return; }
       cpu.melds.push({ type: 'kan', tiles: [...removed, tile] });
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'minkan', p: playerIdx, tile, from: game.lastDiscarder });
       showGameToast(`${cpu.name} カン（明槓）！`, 'blue');
     }
     cpu.isMenzen = false;
@@ -2333,6 +2352,7 @@
       cpu.tsumoTile = rinshan;
       cpu.lastDrawWasRinshan = true;
       game.lastDrawnTile = rinshan;
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'draw', p: playerIdx, tile: rinshan, rinshan: true });
       game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), tempoDelay(450));
       saveGameCheckpoint('turn');
       return;
@@ -2376,6 +2396,7 @@
       const kanTiles = fullHand.filter(t => normTileCode(t) === opt.tile);
       cpu.hand = fullHand.filter(t => normTileCode(t) !== opt.tile);
       cpu.melds.push({ type: 'ankan', tiles: kanTiles });
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'ankan', p: playerIdx, tile: opt.tile });
       showGameToast(`${cpu.name} 暗槓（アンカン）！`, 'blue');
     } else {
       const meld = cpu.melds.find(m => m.type === 'pon' && normTileCode(m.tiles[0]) === opt.tile);
@@ -2387,6 +2408,7 @@
       cpu.hand = remain;
       meld.type = 'kan';
       meld.tiles = [...meld.tiles, added];
+      if (window.MahjongKifu) window.MahjongKifu.event({ t: 'kakan', p: playerIdx, tile: opt.tile });
       showGameToast(`${cpu.name} 加槓（カカン）！`, 'blue');
     }
     cpu.tsumoTile = null;
@@ -2412,6 +2434,7 @@
     cpu.tsumoTile = rinshan;
     cpu.lastDrawWasRinshan = true;
     game.lastDrawnTile = rinshan;
+    if (window.MahjongKifu) window.MahjongKifu.event({ t: 'draw', p: playerIdx, tile: rinshan, rinshan: true });
     renderBoard();
     game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), tempoDelay(450));
     saveGameCheckpoint('turn');
@@ -2527,6 +2550,7 @@
       winner.score += pts.ron + sticksBonus;
     }
     game.riichiSticks = 0;
+    if (window.MahjongKifu) window.MahjongKifu.endRound({ type: isTsumo ? 'tsumo' : 'ron', winner: winnerIdx, loser: isTsumo ? null : loserIdx, tile: winTile, scoresAfter: game.players.map(p => p.score) });
 
     game.lastRoundRenchan = (winner.seatWind === '1z');
     showAgariModal(winner, loserIdx, winTile, isTsumo, scoreRes);
@@ -2542,6 +2566,7 @@
     bumpStats(s => { s.rounds += 1; s.ryukyoku += 1; });
     game.pendingActions = null;
     game.lastRoundRenchan = true;
+    if (window.MahjongKifu) window.MahjongKifu.endRound({ type: 'interrupted', reason, scoresAfter: game.players.map(p => p.score) });
     showGameToast(`流局（${reason}）`, 'orange');
 
     if (!DOM.gameResultModal) return;
@@ -2584,6 +2609,7 @@
 
     const oya = game.players[game.dealerIdx];
     game.lastRoundRenchan = tenpais.includes(oya);
+    if (window.MahjongKifu) window.MahjongKifu.endRound({ type: 'ryukyoku', tenpai: tenpais.map(p => p.idx), scoresAfter: game.players.map(p => p.score) });
 
     showRyukyokuModal(tenpais, notens);
   }
@@ -2712,6 +2738,7 @@
       });
     }
 
+    if (window.MahjongKifu) window.MahjongKifu.finishGame(game.players.map(p => p.score), ranking.findIndex(p => p.idx === 0) + 1);
     DOM.resultModalTitle.textContent = '🏆 対局終了（終局）';
     DOM.resultWinnerAvatar.textContent = ranking[0].avatar;
     DOM.resultWinnerName.textContent = `優勝: ${ranking[0].name}`;
