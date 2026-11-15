@@ -3597,3 +3597,99 @@ body.mat-theme {
   flex-wrap: wrap;
   align-items: center;
 }
+
+/* ---- モバイル対局画面の見直し (2026-11-15) ----
+   課題: 幅390px級では中央ボードに対して河の行幅 (224px) がはみ出し、
+   自分の手牌も約21pxと小さかった。卓まわりを全面的に圧縮して
+   河を6枚で折り返す幅に収め、手牌は余白を回収して拡大する。
+   デスクトップ (>480px) の表示は従来どおり不変。 */
+@media (max-width: 480px) {
+  /* 卓の余白を詰めて実効幅を広げる */
+  .mahjong-table-mat {
+    padding: 10px 6px;
+    gap: 8px;
+  }
+  /* 3Dの傾きを緩めて縦の潰れを軽減 */
+  .mahjong-table-mat.mode-3d {
+    transform: rotateX(12deg);
+    border-bottom-width: 8px;
+  }
+  /* 中間行: 両サイド席を細く */
+  .table-middle-row {
+    gap: 6px;
+    min-height: 0;
+  }
+  .table-seat.seat-kamicha,
+  .table-seat.seat-shimocha {
+    width: 58px;
+  }
+  .player-info-card {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .player-info-card.vertical {
+    padding: 5px 2px;
+  }
+  .player-avatar { font-size: 1rem; }
+  .player-name { font-size: 0.66rem; }
+  .player-kaze { font-size: 0.62rem; padding: 0 3px; }
+  .player-points { font-size: 0.7rem; }
+  .riichi-flag { font-size: 0.6rem; padding: 0 4px; }
+  /* 敵の伏せ牌を小さく */
+  .tile-back {
+    width: 15px;
+    height: 22px;
+  }
+  .enemy-hand-wrap { gap: 1px; margin-top: 4px; }
+  /* 中央ボードと河: 小牌23px×6枚+間隔で収まる幅にする */
+  .table-center-board { padding: 6px; }
+  .kawa-board { gap: 5px; }
+  .kawa-row {
+    width: 150px;
+    min-height: 32px;
+    gap: 2px;
+  }
+  .kawa-middle-container { gap: 5px; }
+  .kawa-col { min-width: 34px; }
+  .kawa-board .kawa-col .mj-tile,
+  .kawa-board .kawa-col .mahjong-tile { margin: -5px 0; }
+  .kawa-board .is-riichi-tile { margin: 0 1px !important; }
+  /* 小牌 (河・副露・ドラ表示) を23px幅に */
+  .mj-tile.tile-sm,
+  .mahjong-tile.tile-sm {
+    width: 23px;
+    height: 32px;
+    border-bottom-width: 3px;
+    border-radius: 3px;
+  }
+  .mj-tile.tile-sm .man-num, .mahjong-tile.tile-sm .man-num { font-size: 0.6rem; }
+  .mj-tile.tile-sm .man-kanji, .mahjong-tile.tile-sm .man-kanji { font-size: 0.55rem; }
+  .mj-tile.tile-sm .ji-text, .mahjong-tile.tile-sm .ji-text { font-size: 0.8rem; }
+  .mj-tile.tile-sm .red-dot-badge, .mahjong-tile.tile-sm .red-dot-badge { width: 4px; height: 4px; }
+  /* 卓中央の情報パネルを圧縮 */
+  .center-dora-display { padding: 5px 6px; }
+  .center-round-text { font-size: 0.78rem; }
+  .center-dora-display .dora-title { font-size: 0.6rem; margin-bottom: 3px; }
+  .turn-indicator { font-size: 0.64rem; }
+  /* 自分の手牌: 余白を回収して拡大 (390px幅で約24.6px) */
+  .jibun-hand-container {
+    padding: 5px 2px;
+    gap: 4px;
+  }
+  .jibun-tiles-row { gap: 4px; }
+  .jibun-tiles-row .mj-tile,
+  .jibun-tiles-row .mahjong-tile {
+    width: calc((100vw - 46px) / 14);
+    height: calc((100vw - 46px) / 14 * 1.4);
+  }
+  .jibun-tiles-row .man-num { font-size: 0.72rem; }
+  .jibun-tiles-row .man-kanji { font-size: 0.66rem; }
+  .jibun-tiles-row .ji-text { font-size: 0.95rem; }
+  /* アクションボタンは指で押しやすい高さに */
+  .btn-game-act {
+    min-height: 44px;
+    padding: 10px 13px;
+    font-size: 0.95rem;
+  }
+  .game-assist-bar { font-size: 0.72rem; }
+}
