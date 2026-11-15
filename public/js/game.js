@@ -45,6 +45,7 @@
     pendingActions: null,// アクション待ち状態
     pendingCpuRons: [],  // 打牌に対してロンできるCPU一覧 (ダブロン解決用)
     isAssisting: true,   // 待ち牌アシスト表示
+    tempo: 'normal',     // 対局テンポ: 'slow' | 'normal' | 'fast' (CPU思考時間の倍率)
     turnTimer: null,     // CPUターンタイマー
 
     // 演出用 (視覚・聴覚のみ。対局ロジックには影響しない)
@@ -111,6 +112,7 @@
       btnRuleAkadora: document.getElementById('btnRuleAkadora'),
       btnRuleKuitan: document.getElementById('btnRuleKuitan'),
       btnRuleKuikae: document.getElementById('btnRuleKuikae'),
+      btnTempo: document.getElementById('btnTempo'),
       btnSfxToggle: document.getElementById('btnSfxToggle'),
 
       gameRoundName: document.getElementById('gameRoundName'),
@@ -216,6 +218,7 @@
 
   // ---------- 設定の保存 / 復元 (localStorage・sfx.js と同じ防御方式) ----------
   const SETTINGS_KEY = 'mahjong_game_settings_v1';
+  const TEMPO_LABELS = { slow: 'ゆっくり', normal: 'ふつう', fast: '高速' };
 
   function readStoredSettings() {
     try {
@@ -240,7 +243,8 @@
           is3D: game.is3D,
           playerCount: game.playerCount,
           matchLength: game.matchLength,
-          isAssisting: game.isAssisting
+          isAssisting: game.isAssisting,
+          tempo: game.tempo
         }));
       }
     } catch (e) { /* 保存できなくても対局は継続する */ }
@@ -256,6 +260,7 @@
     if (s.playerCount === 3 || s.playerCount === 4) game.playerCount = s.playerCount;
     if (s.matchLength === 'tonpuu' || s.matchLength === 'hanchan') game.matchLength = s.matchLength;
     if (typeof s.isAssisting === 'boolean') game.isAssisting = s.isAssisting;
+    if (s.tempo === 'slow' || s.tempo === 'normal' || s.tempo === 'fast') game.tempo = s.tempo;
   }
 
   // 復元した設定をコントロール類の表示に反映する
@@ -281,6 +286,10 @@
     if (DOM.btnRuleKuikae) {
       DOM.btnRuleKuikae.textContent = `喰い替え禁止: ${game.rules.kuikae ? 'ON' : 'OFF'}`;
       DOM.btnRuleKuikae.classList.toggle('active', game.rules.kuikae);
+    }
+    if (DOM.btnTempo) {
+      DOM.btnTempo.textContent = `テンポ: ${TEMPO_LABELS[game.tempo] || 'ふつう'}`;
+      DOM.btnTempo.classList.toggle('active', game.tempo === 'fast');
     }
     if (DOM.btnToggleAssist) {
       DOM.btnToggleAssist.textContent = `💡 アシスト: ${game.isAssisting ? 'ON' : 'OFF'}`;
@@ -549,14 +558,14 @@
         resolveCpuResponses(pa.discarderIdx, pa.tile);
       }
     } else if (data.phase === 'cpuDiscard') {
-      game.turnTimer = setTimeout(() => cpuDiscardAfterCall(game.currentTurn), 450);
+      game.turnTimer = setTimeout(() => cpuDiscardAfterCall(game.currentTurn), tempoDelay(450));
     } else if (game.currentTurn === 0) {
       // turn (自分のツモ直後) はツモ時アクションを再提示。playerCall は打牌待ちのまま
       if (data.phase === 'turn' && game.players[0].tsumoTile) {
         checkPlayerTsumoActions(game.players[0].tsumoTile);
       }
     } else {
-      game.turnTimer = setTimeout(() => cpuExecuteTurn(game.currentTurn, game.lastDrawnTile), 450);
+      game.turnTimer = setTimeout(() => cpuExecuteTurn(game.currentTurn, game.lastDrawnTile), tempoDelay(450));
     }
 
     saveOfferPending = false;
@@ -687,6 +696,16 @@
         DOM.btnRuleKuikae.classList.toggle('active', game.rules.kuikae);
         saveSettings();
         showGameToast(`喰い替え禁止 ${game.rules.kuikae ? 'ON' : 'OFF (制限なし)'}`);
+      });
+    }
+
+    // 6.2 対局テンポ (ゆっくり→ふつう→高速 の循環。即時反映・新規対局は不要)
+    if (DOM.btnTempo) {
+      DOM.btnTempo.addEventListener('click', () => {
+        game.tempo = game.tempo === 'slow' ? 'normal' : game.tempo === 'normal' ? 'fast' : 'slow';
+        syncSettingsUi();
+        saveSettings();
+        showGameToast(`対局テンポ: ${TEMPO_LABELS[game.tempo]} (CPUの思考時間)`);
       });
     }
 
@@ -1049,7 +1068,7 @@
 
     game.turnTimer = setTimeout(() => {
       cpuExecuteTurn(playerIdx, drawnTile);
-    }, 450);
+    }, tempoDelay(450));
     saveGameCheckpoint('turn');
   }
 
@@ -1129,7 +1148,7 @@
     if (player.isRiichi && !hasActions) {
       game.turnTimer = setTimeout(() => {
         handleDiscardTile(0, drawnTile, true);
-      }, 350);
+      }, tempoDelay(350));
     }
   }
 
@@ -1285,6 +1304,12 @@
     game.currentTurn = 0;
 
     afterPlayerKan(player);
+  }
+
+  // ============ 対局テンポ (CPU思考時間の倍率) ============
+  function tempoDelay(base) {
+    const scale = game.tempo === 'fast' ? 0.3 : game.tempo === 'slow' ? 1.8 : 1;
+    return Math.round(base * scale);
   }
 
   // ============ CPUのリーチ判断 (打点・待ち・状況で判断) ============
@@ -2236,13 +2261,13 @@
       cpu.tsumoTile = rinshan;
       cpu.lastDrawWasRinshan = true;
       game.lastDrawnTile = rinshan;
-      game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), 450);
+      game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), tempoDelay(450));
       saveGameCheckpoint('turn');
       return;
     }
 
     // ポン・チー後はそのCPUが打牌する
-    game.turnTimer = setTimeout(() => cpuDiscardAfterCall(playerIdx), 450);
+    game.turnTimer = setTimeout(() => cpuDiscardAfterCall(playerIdx), tempoDelay(450));
     saveGameCheckpoint('cpuDiscard');
   }
 
@@ -2316,7 +2341,7 @@
     cpu.lastDrawWasRinshan = true;
     game.lastDrawnTile = rinshan;
     renderBoard();
-    game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), 450);
+    game.turnTimer = setTimeout(() => cpuExecuteTurn(playerIdx, rinshan), tempoDelay(450));
     saveGameCheckpoint('turn');
   }
 
