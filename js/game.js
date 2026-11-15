@@ -180,6 +180,7 @@
       btnActionPon: document.getElementById('btnActionPon'),
       btnActionChi: document.getElementById('btnActionChi'),
       btnActionKan: document.getElementById('btnActionKan'),
+      btnActionKita: document.getElementById('btnActionKita'),
       btnActionRyukyoku: document.getElementById('btnActionRyukyoku'),
       btnActionPass: document.getElementById('btnActionPass'),
 
@@ -455,6 +456,7 @@
       hand: [...p.hand], tsumoTile: p.tsumoTile,
       kawa: p.kawa.map(k => ({ ...k })),
       melds: p.melds.map(m => ({ ...m, tiles: [...m.tiles] })),
+      kitaCount: p.kitaCount || 0,
       isRiichi: p.isRiichi, isDoubleRiichi: p.isDoubleRiichi,
       ippatsu: p.ippatsu, ippatsuDeclarationPending: p.ippatsuDeclarationPending,
       isMenzen: p.isMenzen, furiten: p.furiten, tempFuriten: p.tempFuriten,
@@ -807,6 +809,7 @@
     if (DOM.btnActionPon) DOM.btnActionPon.addEventListener('click', () => handlePlayerAction('pon'));
     if (DOM.btnActionChi) DOM.btnActionChi.addEventListener('click', () => handlePlayerAction('chi'));
     if (DOM.btnActionKan) DOM.btnActionKan.addEventListener('click', () => handlePlayerAction('kan'));
+    if (DOM.btnActionKita) DOM.btnActionKita.addEventListener('click', () => handlePlayerAction('kita'));
     if (DOM.btnActionRyukyoku) DOM.btnActionRyukyoku.addEventListener('click', () => handlePlayerAction('ryukyoku'));
 
     // 次の局へ
@@ -888,6 +891,7 @@
       tsumoTile: null,
       kawa: [],
       melds: [],
+      kitaCount: 0,            // 北抜きした枚数 (サンマのみ。各1枚がドラ扱い)
       isRiichi: false,
       isDoubleRiichi: false,
       ippatsu: false,
@@ -1091,7 +1095,7 @@
           isIppatsu: player.ippatsu,
           roundWind: game.roundWind,
           seatWind: player.seatWind,
-          doraCount: countDora(fullHand, game.doraIndicators),
+          doraCount: countDora(fullHand, game.doraIndicators) + (player.kitaCount || 0),
           uraDoraCount: player.isRiichi ? countDora(fullHand, game.uraDoraIndicators) : 0,
           honba: game.honba,
           ...buildSituationalOptions(player, true)
@@ -1118,6 +1122,12 @@
       (!player.isRiichi || kanOptions.some(o => o.kind === 'ankan'));
     if (kanAvailable) {
       DOM.btnActionKan.style.display = 'inline-block';
+      hasActions = true;
+    }
+
+    // 北抜き判定 (三人麻雀のみ): 北 (4z) を持っていれば抜いて嶺上から補充できる
+    if (game.playerCount === 3 && DOM.btnActionKita && fullHand.some(t => normTileCode(t) === '4z')) {
+      DOM.btnActionKita.style.display = 'inline-block';
       hasActions = true;
     }
 
@@ -1229,6 +1239,35 @@
     }
     player.tsumoTile = rinshan;
     player.lastDrawWasRinshan = true;
+    game.lastDrawnTile = rinshan;
+
+    renderBoard();
+    updatePlayerAssist();
+    checkPlayerTsumoActions(rinshan);
+    saveGameCheckpoint('turn');
+  }
+
+  // プレイヤーの北抜き (三人麻雀のみ): 北を1枚抜いてドラ扱いにし、嶺上から補充する。
+  // カンと違い槓ドラは増えず、補充ツモは嶺上開花にならない。門前は維持される。
+  function executePlayerKita() {
+    const player = game.players[0];
+    const fullHand = [...player.hand, player.tsumoTile].filter(t => t !== null && t !== undefined);
+    const idx = fullHand.findIndex(t => normTileCode(t) === '4z');
+    if (idx < 0) return;
+    const remain = [...fullHand];
+    remain.splice(idx, 1);
+    player.hand = remain;
+    player.kitaCount = (player.kitaCount || 0) + 1;
+    showGameToast('北抜き！', 'blue');
+
+    const rinshan = drawRinshanTile();
+    game.currentTurn = player.idx;
+    if (!rinshan) {
+      renderBoard();
+      return;
+    }
+    player.tsumoTile = rinshan;
+    player.lastDrawWasRinshan = false;
     game.lastDrawnTile = rinshan;
 
     renderBoard();
@@ -1386,6 +1425,32 @@
 
   function cpuExecuteTurn(playerIdx, drawnTile) {
     const cpu = game.players[playerIdx];
+
+    // 北抜き (三人麻雀のみ): 北を抜くとドラが増え、嶺上から1枚補充できる。
+    // 向聴が悪化しない場合だけ抜く (北が雀頭など要の牌のときは残す)。
+    // 抜いたら補充牌でこのターンをやり直す (補充でツモ・再北抜きもあり得る)。
+    if (game.playerCount === 3 && drawnTile && window.calculateShanten) {
+      const fullNow = [...cpu.hand, drawnTile];
+      const zi = fullNow.findIndex(t => normTileCode(t) === '4z');
+      if (zi >= 0) {
+        const sBefore = window.calculateShanten(fullNow, cpu.melds.length);
+        const rest = fullNow.filter((_, i) => i !== zi);
+        const sAfter = window.calculateShanten(rest, cpu.melds.length);
+        if (sAfter <= sBefore) {
+          cpu.hand = rest;
+          cpu.kitaCount = (cpu.kitaCount || 0) + 1;
+          const rinshan = drawRinshanTile();
+          if (!rinshan) { renderBoard(); return; }
+          cpu.tsumoTile = rinshan;
+          cpu.lastDrawWasRinshan = false;
+          game.lastDrawnTile = rinshan;
+          renderBoard();
+          cpuExecuteTurn(playerIdx, rinshan);
+          return;
+        }
+      }
+    }
+
     const fullHand = [...cpu.hand, drawnTile];
 
     const shanten = window.calculateShanten ? window.calculateShanten(fullHand, cpu.melds.length) : 99;
@@ -1401,7 +1466,7 @@
           isIppatsu: cpu.ippatsu,
           roundWind: game.roundWind,
           seatWind: cpu.seatWind,
-          doraCount: countDora(fullHand, game.doraIndicators),
+          doraCount: countDora(fullHand, game.doraIndicators) + (cpu.kitaCount || 0),
           uraDoraCount: cpu.isRiichi ? countDora(fullHand, game.uraDoraIndicators) : 0,
           honba: game.honba,
           ...buildSituationalOptions(cpu, true)
@@ -1777,7 +1842,7 @@
           isIppatsu: player.ippatsu,
           roundWind: game.roundWind,
           seatWind: player.seatWind,
-          doraCount: countDora(testHand, game.doraIndicators),
+          doraCount: countDora(testHand, game.doraIndicators) + (player.kitaCount || 0),
           uraDoraCount: player.isRiichi ? countDora(testHand, game.uraDoraIndicators) : 0,
           honba: game.honba,
           ...buildSituationalOptions(player, false)
@@ -1871,7 +1936,7 @@
           isIppatsu: cpu.ippatsu,
           roundWind: game.roundWind,
           seatWind: cpu.seatWind,
-          doraCount: countDora(testHand, game.doraIndicators),
+          doraCount: countDora(testHand, game.doraIndicators) + (cpu.kitaCount || 0),
           uraDoraCount: cpu.isRiichi ? countDora(testHand, game.uraDoraIndicators) : 0,
           honba: game.honba,
           ...buildSituationalOptions(cpu, false),
@@ -1975,7 +2040,7 @@
           isIppatsu: player.ippatsu,
           roundWind: game.roundWind,
           seatWind: player.seatWind,
-          doraCount: countDora(fullHand, game.doraIndicators),
+          doraCount: countDora(fullHand, game.doraIndicators) + (player.kitaCount || 0),
           uraDoraCount: player.isRiichi ? countDora(fullHand, game.uraDoraIndicators) : 0,
           honba: game.honba,
           ...buildSituationalOptions(player, true)
@@ -2009,7 +2074,7 @@
           isIppatsu: player.ippatsu,
           roundWind: game.roundWind,
           seatWind: player.seatWind,
-          doraCount: countDora(fullHand, game.doraIndicators),
+          doraCount: countDora(fullHand, game.doraIndicators) + (player.kitaCount || 0),
           uraDoraCount: player.isRiichi ? countDora(fullHand, game.uraDoraIndicators) : 0,
           honba: game.honba,
           ...buildSituationalOptions(player, false)
@@ -2050,6 +2115,13 @@
         executePlayerKan();
       } else if (pending.type === 'discard' && pending.canKan) {
         executePlayerMinkan(pending.tile);
+      }
+      return;
+    }
+
+    if (action === 'kita') {
+      if (pending.type === 'tsumo') {
+        executePlayerKita();
       }
       return;
     }
@@ -2374,7 +2446,7 @@
           isIppatsu: player.ippatsu,
           roundWind: game.roundWind,
           seatWind: player.seatWind,
-          doraCount: countDora(testHand, game.doraIndicators),
+          doraCount: countDora(testHand, game.doraIndicators) + (player.kitaCount || 0),
           uraDoraCount: player.isRiichi ? countDora(testHand, game.uraDoraIndicators) : 0,
           honba: game.honba,
           ...buildSituationalOptions(player, false),
@@ -2802,7 +2874,18 @@
         m.tiles.forEach(t => meldWrap.appendChild(createTileDom(t, true)));
         DOM.jibunMelds.appendChild(meldWrap);
       });
+      appendKitaTiles(player, DOM.jibunMelds);
     }
+  }
+
+  // 北抜きした牌 (サンマ) を副露の横に並べて見せる
+  function appendKitaTiles(player, container) {
+    const n = (player && player.kitaCount) || 0;
+    if (!container || n <= 0) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'meld-group kita-group';
+    for (let i = 0; i < n; i++) wrap.appendChild(createTileDom('4z', true));
+    container.appendChild(wrap);
   }
 
   function renderEnemyHand(playerIdx, container) {
@@ -2854,6 +2937,7 @@
       }
       container.appendChild(meldWrap);
     });
+    appendKitaTiles(player, container);
   }
 
   function renderKawa(playerIdx, container) {
@@ -2955,6 +3039,7 @@
       DOM.btnActionPon.style.display = 'none';
       DOM.btnActionChi.style.display = 'none';
       DOM.btnActionKan.style.display = 'none';
+      if (DOM.btnActionKita) DOM.btnActionKita.style.display = 'none';
       if (DOM.btnActionRyukyoku) DOM.btnActionRyukyoku.style.display = 'none';
     }
   }
