@@ -1287,6 +1287,78 @@
     afterPlayerKan(player);
   }
 
+  // ============ CPUのリーチ判断 (打点・待ち・状況で判断) ============
+  // テンパイしたら一律ランダムではなく、待ちの実残り枚数・ドラ・打点・
+  // 残りツモ・順位・他家のリーチ有無を点数化して判断する。
+  function cpuRiichiDecision(playerIdx, drawnTile) {
+    const cpu = game.players[playerIdx];
+    const fullHand = [...cpu.hand, drawnTile];
+
+    // 実際に切る牌でテンパイするか (その切り方でテンパイしないならリーチしない)
+    const discard = chooseCpuBestDiscard(fullHand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx);
+    const idx = fullHand.indexOf(discard);
+    if (idx < 0) return false;
+    const hand13 = fullHand.filter((_, i) => i !== idx);
+    const shanten = window.calculateShanten ? window.calculateShanten(hand13, cpu.melds.length) : 99;
+    if (shanten !== 0) return false;
+    const waitsInfo = window.analyzeWaits ? window.analyzeWaits(hand13, cpu.melds.length) : null;
+    if (!waitsInfo || !waitsInfo.isTenpai) return false;
+
+    // 場に見えている牌 (自分の手牌・全員の河と副露・ドラ表示牌) を数え、待ちの実残り枚数を出す
+    const visible = {};
+    const addVisible = (t) => { const c = normTileCode(t); visible[c] = (visible[c] || 0) + 1; };
+    hand13.forEach(addVisible);
+    game.players.forEach(p => {
+      p.kawa.forEach(k => addVisible(k.tile));
+      p.melds.forEach(m => m.tiles.forEach(addVisible));
+    });
+    (game.doraIndicators || []).forEach(addVisible);
+    let outs = 0;
+    waitsInfo.waits.forEach(w => { outs += Math.max(0, 4 - (visible[normTileCode(w.tile)] || 0)); });
+
+    // リーチなしで和了った場合の最大ハン数 (待ち牌ごとにロンで試算)
+    let maxHanNoRiichi = 0;
+    let anyWin = false;
+    for (const w of waitsInfo.waits) {
+      const res = calcScoreSafe({
+        hand: hand13,
+        winTile: w.tile,
+        isTsumo: false,
+        isDealer: (cpu.seatWind === '1z'),
+        melds: cpu.melds,
+        options: {
+          isRiichi: false,
+          roundWind: game.roundWind,
+          seatWind: cpu.seatWind,
+          doraCount: countDora([...hand13, w.tile], game.doraIndicators),
+          uraDoraCount: 0,
+          honba: game.honba
+        }
+      });
+      if (res) { anyWin = true; if (res.han > maxHanNoRiichi) maxHanNoRiichi = res.han; }
+    }
+    // リーチなしで満貫以上あるならダマテン (リーチ棒と反撃リスクに見合わない)
+    if (maxHanNoRiichi >= 5) return false;
+
+    let score = 0;
+    if (outs >= 6) score += 2; else if (outs >= 4) score += 1; else if (outs <= 2) score -= 2;
+    const dora = countDora(hand13, game.doraIndicators);
+    if (dora >= 2) score += 2; else if (dora === 1) score += 1;
+    if (!anyWin) score += 1; // 役がなくリーチが必須の手は積極的に
+    const remain = game.wall ? game.wall.length : 70;
+    if (remain <= 8) score -= 2; else if (remain <= 16) score -= 1;
+    const scores = game.players.map(p => p.score);
+    const rank = 1 + scores.filter(s => s > cpu.score).length;
+    if (rank === 4) score += 1; // ラス目は押す
+    if (game.roundWind === '2z' && rank === 1 && remain <= 24) score -= 1; // 南場のトップ目は無理をしない
+    const oppRiichi = game.players.some((p, i) => i !== playerIdx && p.isRiichi);
+    if (oppRiichi) score -= 1; // 先行リーチがあると反撃されやすい
+
+    if (score >= 2) return true;
+    if (score === 1) return Math.random() < 0.35; // 境界は少しだけ揺らして画一化を避ける
+    return false;
+  }
+
   function cpuExecuteTurn(playerIdx, drawnTile) {
     const cpu = game.players[playerIdx];
     const fullHand = [...cpu.hand, drawnTile];
@@ -1323,7 +1395,7 @@
     }
 
     if (!cpu.isRiichi && cpu.isMenzen && cpu.score >= 1000) {
-      if (canRiichi(cpu.hand, drawnTile) && Math.random() < 0.75) {
+      if (canRiichi(cpu.hand, drawnTile) && cpuRiichiDecision(playerIdx, drawnTile)) {
         declareRiichi(playerIdx);
       }
     }
