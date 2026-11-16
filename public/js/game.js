@@ -113,6 +113,8 @@
       btnRuleKuitan: document.getElementById('btnRuleKuitan'),
       btnRuleKuikae: document.getElementById('btnRuleKuikae'),
       btnTempo: document.getElementById('btnTempo'),
+      btnFullscreen: document.getElementById('btnFullscreen'),
+      tabGame: document.getElementById('tab-game'),
       btnSfxToggle: document.getElementById('btnSfxToggle'),
 
       gameRoundName: document.getElementById('gameRoundName'),
@@ -709,6 +711,19 @@
         saveSettings();
         showGameToast(`対局テンポ: ${TEMPO_LABELS[game.tempo]} (CPUの思考時間)`);
       });
+    }
+
+    // 6.3 全画面表示 (スマホ向け。Fullscreen API 非対応環境では疑似全画面にフォールバック)
+    if (DOM.btnFullscreen) {
+      DOM.btnFullscreen.addEventListener('click', () => {
+        toggleFullscreen();
+      });
+      syncFullscreenBtn();
+    }
+    // システムジェスチャ等で全画面が解除された場合もボタン表示を追随させる
+    if (typeof document.addEventListener === 'function') {
+      document.addEventListener('fullscreenchange', syncFullscreenBtn);
+      document.addEventListener('webkitfullscreenchange', syncFullscreenBtn);
     }
 
     // 6.5 効果音 ON/OFF (状態は sfx.js が localStorage に保存)
@@ -3204,9 +3219,86 @@
     }, 1800);
   }
 
+  // ================= 全画面表示 (スマホ向け) =================
+  // Fullscreen API の対象は #tab-game ではなく documentElement:
+  // 結果・副露などのモーダルは #tab-game の外 (body 直下) にあるため、
+  // #tab-game を全画面化すると対局中のモーダルが表示できなくなる。
+  // iPhone Safari は要素の Fullscreen API に非対応なので、その場合は
+  // body.fs-mode による疑似全画面 (CSS) にフォールバックする。
+  // API が存在しない環境 (テストハーネス等) でも例外を出さないよう全てガードする。
+  function fsApiElement() {
+    const el = document.documentElement;
+    if (!el) return null;
+    if (typeof el.requestFullscreen === 'function' || typeof el.webkitRequestFullscreen === 'function') return el;
+    return null;
+  }
+
+  function fsCurrentElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function isFsMode() {
+    return !!(document.body && document.body.classList && document.body.classList.contains('fs-mode'));
+  }
+
+  function isFullscreenActive() {
+    return !!fsCurrentElement() || isFsMode();
+  }
+
+  function syncFullscreenBtn() {
+    if (!DOM.btnFullscreen) return;
+    const on = isFullscreenActive();
+    DOM.btnFullscreen.textContent = on ? '⛶ 終了' : '⛶ 全画面';
+    DOM.btnFullscreen.classList.toggle('active', on);
+  }
+
+  function enterFsMode() {
+    if (document.body && document.body.classList) document.body.classList.add('fs-mode');
+    syncFullscreenBtn();
+  }
+
+  function exitFsMode() {
+    if (document.body && document.body.classList) document.body.classList.remove('fs-mode');
+    syncFullscreenBtn();
+  }
+
+  function enterFullscreen() {
+    const el = fsApiElement();
+    if (!el) { enterFsMode(); return; }
+    try {
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      const result = req.call(el);
+      // 権限等で拒否された場合は疑似全画面にフォールバック
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => enterFsMode());
+      }
+    } catch (e) {
+      enterFsMode();
+    }
+    // 成功時は fullscreenchange イベントでボタン表示を同期する
+  }
+
+  function exitFullscreen() {
+    if (fsCurrentElement()) {
+      try {
+        if (typeof document.exitFullscreen === 'function') document.exitFullscreen();
+        else if (typeof document.webkitExitFullscreen === 'function') document.webkitExitFullscreen();
+      } catch (e) { /* 終了に失敗しても表示同期だけは行う */ }
+      // API 側の終了は fullscreenchange で同期される
+    }
+    if (isFsMode()) exitFsMode();
+  }
+
+  function toggleFullscreen() {
+    if (isFullscreenActive()) exitFullscreen();
+    else enterFullscreen();
+  }
+
   window.MahjongGame = {
     init,
     startNewGame,
+    toggleFullscreen,
+    isFullscreenActive,
     isInitialized: false
   };
 

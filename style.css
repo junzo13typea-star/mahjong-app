@@ -3693,3 +3693,53 @@ body.mat-theme {
   }
   .game-assist-bar { font-size: 0.72rem; }
 }
+
+/* ================= 全画面表示 (v27・スマホ向け) ================= */
+/* Fullscreen API 使用時 (対象は documentElement): 対局画面以外を隠して
+   対局画面を画面いっぱいに使う。モーダルは body 直下にあるため、
+   documentElement の全画面化でも表示は維持される */
+:fullscreen .app-header,
+:fullscreen .mode-nav,
+:fullscreen .palette-dock,
+:fullscreen footer,
+:-webkit-full-screen .app-header,
+:-webkit-full-screen .mode-nav,
+:-webkit-full-screen .palette-dock,
+:-webkit-full-screen footer {
+  display: none !important;
+}
+:fullscreen .tab-panel:not(#tab-game),
+:-webkit-full-screen .tab-panel:not(#tab-game) {
+  display: none !important;
+}
+:fullscreen #tab-game,
+:-webkit-full-screen #tab-game {
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 疑似全画面フォールバック (iPhone Safari 等、Fullscreen API 非対応環境):
+   body.fs-mode の間、対局画面をビューポート全体に固定表示する */
+body.fs-mode {
+  overflow: hidden;
+}
+body.fs-mode .app-header,
+body.fs-mode .mode-nav,
+body.fs-mode .palette-dock,
+body.fs-mode footer,
+body.fs-mode .tab-panel:not(#tab-game) {
+  display: none !important;
+}
+body.fs-mode #tab-game {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  /* モーダル (z-index 200) とトースト (300) より下に置き、対局の進行を妨げない */
+  z-index: 100;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background-color: var(--mat-bg-dark);
+  background-image:
+    radial-gradient(ellipse at 50% 20%, var(--mat-bg-light) 0%, var(--mat-bg-mid) 50%, var(--mat-bg-dark) 100%),
+    repeating-linear-gradient(45deg, var(--mat-felt-tint) 0px, var(--mat-felt-tint) 2px, transparent 2px, transparent 6px);
+  padding: 10px 8px calc(12px + env(safe-area-inset-bottom, 0px));
+}
