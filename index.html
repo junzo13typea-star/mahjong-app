@@ -24,6 +24,73 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Zen+Old+Mincho:wght@700;900&display=swap" rel="stylesheet">
+  <!-- Global Error Guard (U3): 未捕捉例外でも真っ白にせず、再読み込み導線を出す。SW更新トースト（上部）とは重ならないよう下部に表示 -->
+  <script>
+    // === U3 error guard (start) ===
+    (function () {
+      var bannerShown = false;
+      var bannerPending = false;
+
+      function showErrorBanner() {
+        if (bannerShown) return;
+        if (!document.body) {
+          if (!bannerPending) {
+            bannerPending = true;
+            document.addEventListener('DOMContentLoaded', showErrorBanner);
+          }
+          return;
+        }
+        bannerShown = true;
+        try {
+          var bar = document.createElement('div');
+          bar.id = 'globalErrorBanner';
+          bar.setAttribute('role', 'alert');
+          bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));z-index:10010;display:flex;align-items:center;gap:12px;max-width:min(92vw,560px);background:rgba(4,30,23,0.97);color:#fef3c7;border:1px solid #f59e0b;border-radius:20px;padding:10px 16px;font-size:0.85rem;font-weight:700;box-shadow:0 8px 30px rgba(0,0,0,0.6);';
+          var text = document.createElement('span');
+          text.textContent = '問題が発生しました';
+          var reloadBtn = document.createElement('button');
+          reloadBtn.type = 'button';
+          reloadBtn.textContent = '再読み込み';
+          reloadBtn.style.cssText = 'background:#f59e0b;color:#231303;border:none;border-radius:999px;padding:6px 14px;font-size:0.82rem;font-weight:800;cursor:pointer;white-space:nowrap;';
+          reloadBtn.addEventListener('click', function () {
+            try { window.location.reload(); } catch (e) { /* 何もしない */ }
+          });
+          var closeBtn = document.createElement('button');
+          closeBtn.type = 'button';
+          closeBtn.textContent = '×';
+          closeBtn.setAttribute('aria-label', '閉じる');
+          closeBtn.style.cssText = 'background:transparent;color:#fef3c7;border:none;font-size:1rem;line-height:1;cursor:pointer;padding:4px 6px;';
+          closeBtn.addEventListener('click', function () {
+            try { bar.remove(); } catch (e) { /* 何もしない */ }
+          });
+          bar.appendChild(text);
+          bar.appendChild(reloadBtn);
+          bar.appendChild(closeBtn);
+          document.body.appendChild(bar);
+        } catch (e) { /* バナーが出なくてもアプリは止めない */ }
+      }
+
+      window.addEventListener('error', function (event) {
+        try {
+          if (!event || !event.message) return; // リソース読み込み失敗は対象外
+          if (event.message === 'Script error.' && !event.filename) return; // クロスオリジンの詳細不明エラーは対象外
+          if (window.console && console.error) console.error('[global-error]', event.error || event.message);
+          showErrorBanner();
+        } catch (e) { /* ハンドラ自体は絶対に投げない */ }
+      });
+
+      window.addEventListener('unhandledrejection', function (event) {
+        try {
+          var reason = event && event.reason;
+          var name = reason && reason.name;
+          if (name === 'AbortError' || name === 'NotAllowedError') return; // 再生の中断・自動再生制限は正常系
+          if (window.console && console.error) console.error('[unhandled-rejection]', reason);
+          showErrorBanner();
+        } catch (e) { /* ハンドラ自体は絶対に投げない */ }
+      });
+    })();
+    // === U3 error guard (end) ===
+  </script>
 </head>
 <body class="mat-theme">
   <div class="app-container">
