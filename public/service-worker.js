@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v28';
+const CACHE_NAME = 'mahjong-ai-v29'; // U4: viewport-fit=cover 対応の index.html / style.css を配信するため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

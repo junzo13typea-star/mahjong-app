@@ -62,11 +62,13 @@ body.mat-theme {
 }
 
 /* アプリ全体レイアウト */
+/* U4: viewport-fit=cover によりノッチ端末で画面端まで描画されるため、
+   上・左右のセーフエリア分を余白に加算する（非対応環境では env() が 0px 扱い） */
 .app-container {
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
-  padding: 12px 14px;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) calc(14px + env(safe-area-inset-right, 0px)) 12px calc(14px + env(safe-area-inset-left, 0px));
 }
 
 /* ヘッダー */
@@ -2606,7 +2608,8 @@ body.mat-theme {
 }
 
 .app-container {
-  padding: 16px 16px 12px;
+  /* U4: mat-theme 側の上書きにもセーフエリア分を反映（こちらが実効ルール） */
+  padding: calc(16px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) 12px calc(16px + env(safe-area-inset-left, 0px));
 }
 
 /* ヘッダー: ガラス質＋金の細線 */
@@ -3714,6 +3717,8 @@ body.mat-theme {
 }
 :fullscreen #tab-game,
 :-webkit-full-screen #tab-game {
+  /* U4: 全画面時もノッチ分を上部に確保（下部は従来どおり） */
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
   padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
 
@@ -3741,5 +3746,6 @@ body.fs-mode #tab-game {
   background-image:
     radial-gradient(ellipse at 50% 20%, var(--mat-bg-light) 0%, var(--mat-bg-mid) 50%, var(--mat-bg-dark) 100%),
     repeating-linear-gradient(45deg, var(--mat-felt-tint) 0px, var(--mat-felt-tint) 2px, transparent 2px, transparent 6px);
-  padding: 10px 8px calc(12px + env(safe-area-inset-bottom, 0px));
+  /* U4: 疑似全画面でもノッチ分を上部に確保 */
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 8px calc(12px + env(safe-area-inset-bottom, 0px));
 }
