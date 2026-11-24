@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v32'; // 対局コールアウト演出 (リーチ・鳴き・和了の中央表示＋役スタンプ) を配信するため更新
+const CACHE_NAME = 'mahjong-ai-v33'; // 対局コールアウト演出 (リーチ・鳴き・和了の中央表示＋役スタンプ) を配信するため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

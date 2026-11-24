@@ -124,6 +124,80 @@
     } catch (e) { /* 演出の失敗で対局を止めない */ }
   }
 
+  // ===== v33: CPUセリフ吹き出し =====
+  const CPU_LINES = {
+    'レン': {
+      riichi: ['リーチ。逃がさないよ', 'ここからが本番だね'],
+      pon: ['ポン。流れを変える'], chi: ['チー。進めるよ'], kan: ['カン。大きく行くよ'],
+      agari: ['いただき。計算通り', 'ふっ、いい手でしょ'], dealIn: ['っ…やられた', '今のは効いたな…'],
+    },
+    '葵': {
+      riichi: ['リーチです。覚悟してね', 'リーチ！逃げられないよ'],
+      pon: ['ポン！もらいます'], chi: ['チー、いただきます'], kan: ['カン！勝負どころね'],
+      agari: ['ありがとう、いただきました♪', 'やった！決まったよ'], dealIn: ['うっ…やられた…', 'そんな…痛いよ…'],
+    },
+    '龍馬': {
+      riichi: ['リーチじゃ。わしは本気じゃぞ', 'リーチ。のう、震えとるか？'],
+      pon: ['ポンじゃ。遠慮せん'], chi: ['チーじゃ、すまんの'], kan: ['カンじゃ！派手にいくぞ'],
+      agari: ['ほっほっほ、わしの勝ちじゃ', 'うむ、見事な手じゃった'], dealIn: ['むむ…やりおるわい', 'いてて…効いたぞい'],
+    },
+  };
+  const CPU_LINE_FALLBACK = {
+    riichi: ['リーチ！'], pon: ['ポン！'], chi: ['チー！'], kan: ['カン！'],
+    agari: ['あがり！'], dealIn: ['やられた…'],
+  };
+  const CPU_FACES = { riichi: '😤', pon: '😏', chi: '😏', kan: '😎', agari: '😆', dealIn: '😖' };
+  const SEAT_IDS = { 1: 'seatShimocha', 2: 'seatToimen', 3: 'seatKamicha' };
+
+  function showSpeech(playerIdx, kind) {
+    try {
+      if (playerIdx === 0) return;
+      const seat = document.getElementById(SEAT_IDS[playerIdx]);
+      if (!seat) return;
+      const card = seat.querySelector('.player-info-card');
+      if (!card) return;
+      const player = game.players[playerIdx];
+      const table = (player && CPU_LINES[player.name]) || CPU_LINE_FALLBACK;
+      const lines = table[kind] || CPU_LINE_FALLBACK[kind];
+      if (!lines || !lines.length) return;
+      const old = card.querySelector('.speech-bubble');
+      if (old) old.remove();
+      const bubble = document.createElement('div');
+      bubble.className = 'speech-bubble';
+      bubble.textContent = lines[Math.floor(Math.random() * lines.length)];
+      card.appendChild(bubble);
+      setTimeout(() => { try { bubble.remove(); } catch (e) {} }, 1950);
+      const avatar = card.querySelector('.player-avatar');
+      if (avatar && CPU_FACES[kind]) {
+        if (!avatar.dataset.faceOrig) avatar.dataset.faceOrig = avatar.textContent;
+        avatar.textContent = CPU_FACES[kind];
+        clearTimeout(avatar._faceTimer);
+        avatar._faceTimer = setTimeout(() => {
+          try { avatar.textContent = avatar.dataset.faceOrig || avatar.textContent; } catch (e) {}
+        }, 1950);
+      }
+    } catch (e) { /* 演出の失敗で対局を止めない */ }
+  }
+
+  // ===== v33: スコア増減ポップ =====
+  function showScoreDelta(playerIdx, delta) {
+    try {
+      if (!delta) return;
+      const scoreEls = [DOM.scoreJibun, DOM.scoreShimocha, DOM.scoreToimen, DOM.scoreKamicha];
+      const scoreEl = scoreEls[playerIdx];
+      if (!scoreEl || !scoreEl.parentElement) return;
+      const anchorEl = scoreEl.parentElement;
+      anchorEl.classList.add('score-delta-anchor');
+      const old = anchorEl.querySelector('.score-delta-pop');
+      if (old) old.remove();
+      const pop = document.createElement('span');
+      pop.className = 'score-delta-pop ' + (delta > 0 ? 'plus' : 'minus');
+      pop.textContent = (delta > 0 ? '+' : '−') + Math.abs(delta).toLocaleString();
+      anchorEl.appendChild(pop);
+      setTimeout(() => { try { pop.remove(); } catch (e) {} }, 1650);
+    } catch (e) { /* 演出の失敗で対局を止めない */ }
+  }
+
   // CPU のリーチ時に画面の縁を赤く脈動させ、緊張感を出す
   function pulseDanger() {
     try {
@@ -232,6 +306,8 @@
       resultAgariType: document.getElementById('resultAgariType'),
       resultHandTiles: document.getElementById('resultHandTiles'),
       resultDoraTiles: document.getElementById('resultDoraTiles'),
+      resultUraSection: document.getElementById('resultUraSection'),
+      resultUraTiles: document.getElementById('resultUraTiles'),
       resultYakuList: document.getElementById('resultYakuList'),
       resultScorePoints: document.getElementById('resultScorePoints'),
       resultScoreRank: document.getElementById('resultScoreRank'),
@@ -889,6 +965,7 @@
    */
   function startNewGame() {
     clearTimeout(game.turnTimer);
+    game._dispScores = {}; // v33: スコア増減ポップの基準をリセット
     // 新規対局では前対局の途中セーブと成績ガードをリセットする
     clearGameSave();
     saveOfferPending = false;
@@ -1673,6 +1750,7 @@
     sfx('riichi');
     showGameToast(`${player.name} が立直（リーチ）！`, 'gold');
     showCallout(player.isDoubleRiichi ? 'ダブルリーチ！' : 'リーチ！', 'riichi', player.name);
+    if (playerIdx !== 0) showSpeech(playerIdx, 'riichi');
     if (playerIdx !== 0) pulseDanger();
     if (window.MahjongKifu) window.MahjongKifu.event({ t: 'riichi', p: playerIdx });
     renderBoard();
@@ -1870,8 +1948,30 @@
       DOM.resultHandTiles.appendChild(winEl);
     });
 
+    // v33: ドラ・裏ドラは1枚ずつめくって見せる (裏ドラは先頭の和了者の分を表示)
+    const firstWinner = winners[0] ? game.players[winners[0].idx] : null;
     DOM.resultDoraTiles.innerHTML = '';
-    game.doraIndicators.forEach(t => DOM.resultDoraTiles.appendChild(createTileDom(t, true)));
+    game.doraIndicators.forEach((t, i) => {
+      const el = createTileDom(t, true);
+      el.classList.add('dora-flip');
+      el.style.animationDelay = `${0.15 + i * 0.3}s`;
+      DOM.resultDoraTiles.appendChild(el);
+    });
+    if (DOM.resultUraSection && DOM.resultUraTiles) {
+      if (firstWinner && firstWinner.isRiichi && game.uraDoraIndicators && game.uraDoraIndicators.length) {
+        DOM.resultUraSection.style.display = '';
+        DOM.resultUraTiles.innerHTML = '';
+        const base = 0.15 + game.doraIndicators.length * 0.3;
+        game.uraDoraIndicators.forEach((t, i) => {
+          const el = createTileDom(t, true);
+          el.classList.add('dora-flip');
+          el.style.animationDelay = `${base + i * 0.3}s`;
+          DOM.resultUraTiles.appendChild(el);
+        });
+      } else {
+        DOM.resultUraSection.style.display = 'none';
+      }
+    }
 
     DOM.resultYakuList.innerHTML = '';
     winners.forEach(w => {
@@ -2373,6 +2473,7 @@
       if (game.rules.kuikae) cpu.kuikaeForbidden = [raw];
       showGameToast(`${cpu.name} ポン！`, 'blue');
       showCallout('ポン！', 'call', cpu.name);
+      showSpeech(playerIdx, 'pon');
       sfx('call');
     } else if (type === 'chi') {
       const choice = chiChoice || cpuDecideChi(cpu, tile);
@@ -2393,6 +2494,7 @@
       }
       showGameToast(`${cpu.name} チー！`, 'blue');
       showCallout('チー！', 'call', cpu.name);
+      showSpeech(playerIdx, 'chi');
       sfx('call');
     } else if (type === 'kan') {
       const removed = [];
@@ -2404,6 +2506,7 @@
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'minkan', p: playerIdx, tile, from: game.lastDiscarder });
       showGameToast(`${cpu.name} カン（明槓）！`, 'blue');
       showCallout('カン！', 'call', cpu.name);
+      showSpeech(playerIdx, 'kan');
       sfx('call');
     }
     cpu.isMenzen = false;
@@ -2465,6 +2568,7 @@
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'ankan', p: playerIdx, tile: opt.tile });
       showGameToast(`${cpu.name} 暗槓（アンカン）！`, 'blue');
       showCallout('カン！', 'call', cpu.name);
+      showSpeech(playerIdx, 'kan');
       sfx('call');
     } else {
       const meld = cpu.melds.find(m => m.type === 'pon' && normTileCode(m.tiles[0]) === opt.tile);
@@ -2479,6 +2583,7 @@
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'kakan', p: playerIdx, tile: opt.tile });
       showGameToast(`${cpu.name} 加槓（カカン）！`, 'blue');
       showCallout('カン！', 'call', cpu.name);
+      showSpeech(playerIdx, 'kan');
       sfx('call');
     }
     cpu.tsumoTile = null;
@@ -2646,6 +2751,7 @@
     DOM.resultAgariType.textContent = '点数移動なし • 親は連荘します';
     DOM.resultHandTiles.innerHTML = '';
     DOM.resultDoraTiles.innerHTML = '';
+    if (DOM.resultUraSection) DOM.resultUraSection.style.display = 'none'; // v33: 裏ドラ欄は和了モーダル専用
     DOM.resultYakuList.innerHTML = '<li class="yaku-badge-item">途中流局のためノーテン罰符はありません</li>';
     DOM.resultScorePoints.textContent = '流局';
     DOM.resultScoreRank.textContent = '親連荘';
@@ -2727,6 +2833,8 @@
 
     DOM.resultModalTitle.textContent = isTsumo ? '🀄️ ツモ和了（ツモアガリ）！' : '🀄️ ロン和了（栄和）！';
     showCallout(isTsumo ? 'ツモ！' : 'ロン！', 'agari', winner.name);
+    if (winner.idx !== 0) showSpeech(winner.idx, 'agari');
+    if (!isTsumo && loserIdx != null && loserIdx !== 0) showSpeech(loserIdx, 'dealIn');
     DOM.resultWinnerAvatar.textContent = winner.avatar;
     DOM.resultWinnerName.textContent = winner.name;
     DOM.resultAgariType.textContent = isTsumo ? '門前清自摸和' : `放銃: ${PLAYER_NAMES[loserIdx]}`;
@@ -2740,8 +2848,29 @@
     winEl.classList.add('agari-tile');
     DOM.resultHandTiles.appendChild(winEl);
 
+    // v33: ドラ・裏ドラは1枚ずつめくって見せる
     DOM.resultDoraTiles.innerHTML = '';
-    game.doraIndicators.forEach(t => DOM.resultDoraTiles.appendChild(createTileDom(t, true)));
+    game.doraIndicators.forEach((t, i) => {
+      const el = createTileDom(t, true);
+      el.classList.add('dora-flip');
+      el.style.animationDelay = `${0.15 + i * 0.3}s`;
+      DOM.resultDoraTiles.appendChild(el);
+    });
+    if (DOM.resultUraSection && DOM.resultUraTiles) {
+      if (winner.isRiichi && game.uraDoraIndicators && game.uraDoraIndicators.length) {
+        DOM.resultUraSection.style.display = '';
+        DOM.resultUraTiles.innerHTML = '';
+        const base = 0.15 + game.doraIndicators.length * 0.3;
+        game.uraDoraIndicators.forEach((t, i) => {
+          const el = createTileDom(t, true);
+          el.classList.add('dora-flip');
+          el.style.animationDelay = `${base + i * 0.3}s`;
+          DOM.resultUraTiles.appendChild(el);
+        });
+      } else {
+        DOM.resultUraSection.style.display = 'none';
+      }
+    }
 
     DOM.resultYakuList.innerHTML = '';
     (scoreRes.yakuList || []).forEach((y, i) => {
@@ -2789,6 +2918,7 @@
 
     DOM.resultHandTiles.innerHTML = '';
     DOM.resultDoraTiles.innerHTML = '';
+    if (DOM.resultUraSection) DOM.resultUraSection.style.display = 'none'; // v33: 裏ドラ欄は和了モーダル専用
     DOM.resultYakuList.innerHTML = '<li class="yaku-badge-item">ノーテン罰符授受（計3,000点）</li>';
     DOM.resultScorePoints.textContent = '流局';
     DOM.resultScoreRank.textContent = game.lastRoundRenchan ? '親連荘' : '親流れ';
@@ -2891,6 +3021,16 @@
     if (DOM.scoreShimocha && game.players[1]) DOM.scoreShimocha.textContent = game.players[1].score.toLocaleString();
     if (DOM.scoreToimen && game.players[2]) DOM.scoreToimen.textContent = game.players[2].score.toLocaleString();
     if (DOM.scoreKamicha && game.players[3]) DOM.scoreKamicha.textContent = game.players[3].score.toLocaleString();
+
+    // v33: スコアが前回描画から変わっていたら増減ポップを出す
+    try {
+      if (!game._dispScores) game._dispScores = {};
+      game.players.forEach((p, i) => {
+        const prev = game._dispScores[i];
+        if (typeof prev === 'number' && prev !== p.score) showScoreDelta(i, p.score - prev);
+        game._dispScores[i] = p.score;
+      });
+    } catch (e) { /* ignore */ }
 
     // リーチフラグ
     if (DOM.riichiFlagJibun && game.players[0]) DOM.riichiFlagJibun.style.display = game.players[0].isRiichi ? 'inline-block' : 'none';
