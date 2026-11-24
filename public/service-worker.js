@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v30'; // 遊び方ヘルプに「ホーム画面に追加する」を追記した index.html を配信するため更新
+const CACHE_NAME = 'mahjong-ai-v31'; // ツモ牌の判別強化とスマホ手牌フィット (style.css) を配信するため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

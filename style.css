@@ -3749,3 +3749,51 @@ body.fs-mode #tab-game {
   /* U4: 疑似全画面でもノッチ分を上部に確保 */
   padding: calc(10px + env(safe-area-inset-top, 0px)) 8px calc(12px + env(safe-area-inset-bottom, 0px));
 }
+
+/* ================= v31: ツモ牌の判別強化＋スマホ手牌フィット ================= */
+/* ツモ牌は「間隔＋持ち上げ＋金のリング」で一目で分かるようにする。
+   従来は手牌との間隔が最大6px・違いは上辺の色だけだったため、
+   特にスマホでは引いた牌が手牌に紛れて見分けられなかった。 */
+.tsumo-tile-group {
+  margin-left: 10px;
+  transform: translateY(-5px) scale(1.06);
+}
+#jibunTsumoTile .mj-tile {
+  box-shadow: 0 0 0 2px #f5c542, 0 5px 12px rgba(0, 0, 0, 0.5);
+}
+/* 3D表示ではグループ側の変形を切り、牌自体を手前にせり出させる */
+.mode-3d .tsumo-tile-group { transform: none; }
+.mode-3d #jibunTsumoTile .mj-tile {
+  transform: rotateX(-18deg) translateZ(30px);
+}
+
+/* スマホ幅では情報カードと手牌を縦に分離し、手牌行に画面幅いっぱいを使わせる。
+   従来はカード＋14枚が1行に並んで横スクロールになり、
+   右端のツモ牌が画面外に押し出されて見えなかった。 */
+@media (max-width: 560px) {
+  .jibun-hand-container {
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    padding: 6px 4px;
+    gap: 6px;
+  }
+  .jibun-hand-container .player-info-card { order: 1; }
+  .jibun-hand-container .jibun-tiles-row {
+    order: 2;
+    flex: 1 1 100%;
+    gap: 0;
+  }
+  .jibun-hand-container .jibun-melds-group { order: 3; }
+  .jibun-tiles-row .hand-tiles-group { gap: 1px; }
+  /* 14枚＋間隔が必ず画面幅に収まる計算 (390px幅で約25.6px)。
+     ID指定＋!important＋min-width:0 で、既存の固定46pxやflexの最小サイズに勝たせる */
+  #jibunHandTiles .mj-tile,
+  #jibunHandTiles .mahjong-tile,
+  #jibunTsumoTile .mj-tile,
+  #jibunTsumoTile .mahjong-tile {
+    width: calc((100vw - 32px) / 14) !important;
+    height: calc((100vw - 32px) / 14 * 1.4) !important;
+    min-width: 0;
+  }
+  .tsumo-tile-group { margin-left: 8px; }
+}
