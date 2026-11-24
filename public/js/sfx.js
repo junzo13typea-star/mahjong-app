@@ -171,6 +171,13 @@
       tone(c, t + 0.085, 987.77, 0.16, 0.3, 'triangle'); // B5
       noiseBurst(c, t, 0.03, 2600, 0.15, 1.5);
     },
+    // 鳴き (ポン・チー・カン): 短く歯切れの良い2音 + 小さなノイズ
+    call: function(c) {
+      var t = c.currentTime;
+      tone(c, t, 392, 0.07, 0.28, 'square');            // G4
+      tone(c, t + 0.06, 587.33, 0.13, 0.28, 'square');  // D5
+      noiseBurst(c, t, 0.03, 2400, 0.15, 1.5);
+    },
     // 和了ファンファーレ: 和音アルペジオ。役満時は長く・豪華に
     agari: function(c, isYakuman) {
       var t = c.currentTime;

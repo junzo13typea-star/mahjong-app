@@ -103,6 +103,39 @@
     requestAnimationFrame(step);
   }
 
+  // ================= 対局コールアウト演出 (v32) =================
+  // リーチ・鳴き・和了の瞬間、画面中央に大きな文字を弾けさせる市販ゲーム風の演出。
+  // 対局ロジックのタイミングには一切干渉しない (fire-and-forget)。
+  // 要素が無い環境 (テストハーネス等) では静かに何もしない。
+  let calloutTimer = null;
+  function showCallout(text, kind, sub) {
+    try {
+      const overlay = document.getElementById('calloutOverlay');
+      const textEl = document.getElementById('calloutText');
+      if (!overlay || !textEl) return;
+      const subEl = document.getElementById('calloutSub');
+      textEl.textContent = text;
+      if (subEl) subEl.textContent = sub || '';
+      overlay.className = 'callout-overlay callout-' + (kind || 'call');
+      void overlay.offsetWidth; // リフローでアニメーションをリスタート
+      overlay.classList.add('callout-show');
+      if (calloutTimer) clearTimeout(calloutTimer);
+      calloutTimer = setTimeout(() => { overlay.classList.remove('callout-show'); }, kind === 'agari' ? 1200 : 1000);
+    } catch (e) { /* 演出の失敗で対局を止めない */ }
+  }
+
+  // CPU のリーチ時に画面の縁を赤く脈動させ、緊張感を出す
+  function pulseDanger() {
+    try {
+      const vp = document.querySelector('.mahjong-table-viewport');
+      if (!vp) return;
+      vp.classList.remove('danger-pulse');
+      void vp.offsetWidth;
+      vp.classList.add('danger-pulse');
+      setTimeout(() => vp.classList.remove('danger-pulse'), 1350);
+    } catch (e) { /* 演出のみ: 失敗しても無視 */ }
+  }
+
   function cacheDom() {
     DOM = {
       mahjongTableMat: document.getElementById('mahjongTableMat'),
@@ -1312,6 +1345,8 @@
       player.melds.push({ type: 'ankan', tiles: kanTiles });
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'ankan', p: 0, tile: opt.tile });
       showGameToast('暗槓（アンカン）！', 'blue');
+      showCallout('カン！', 'call', 'あなた');
+      sfx('call');
     } else {
       // 加槓: ポンの刻子に手牌 (またはツモ牌) の1枚を加える
       const meld = player.melds.find(m => m.type === 'pon' && normTileCode(m.tiles[0]) === opt.tile);
@@ -1324,6 +1359,8 @@
       meld.tiles = [...meld.tiles, added];
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'kakan', p: 0, tile: opt.tile });
       showGameToast('加槓（カカン）！', 'blue');
+      showCallout('カン！', 'call', 'あなた');
+      sfx('call');
 
       // 槍槓チェック: CPUがこの追加牌でロンできる場合はロン解決が優先する
       const chankanWinners = [];
@@ -1364,6 +1401,8 @@
     game.players.forEach(p => { p.ippatsu = false; p.ippatsuDeclarationPending = false; });
 
     showGameToast('カン（明槓）！', 'blue');
+    showCallout('カン！', 'call', 'あなた');
+    sfx('call');
     game.currentTurn = 0;
 
     afterPlayerKan(player);
@@ -1633,6 +1672,8 @@
 
     sfx('riichi');
     showGameToast(`${player.name} が立直（リーチ）！`, 'gold');
+    showCallout(player.isDoubleRiichi ? 'ダブルリーチ！' : 'リーチ！', 'riichi', player.name);
+    if (playerIdx !== 0) pulseDanger();
     if (window.MahjongKifu) window.MahjongKifu.event({ t: 'riichi', p: playerIdx });
     renderBoard();
   }
@@ -2179,6 +2220,8 @@
     if (game.rules.kuikae) player.kuikaeForbidden = [raw];
 
     showGameToast('ポン！', 'blue');
+    showCallout('ポン！', 'call', 'あなた');
+    sfx('call');
     renderBoard();
     game.currentTurn = 0;
     updatePlayerAssist();
@@ -2221,6 +2264,8 @@
       }
 
       showGameToast('チー！', 'blue');
+      showCallout('チー！', 'call', 'あなた');
+      sfx('call');
       renderBoard();
       game.currentTurn = 0;
       updatePlayerAssist();
@@ -2327,6 +2372,8 @@
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'pon', p: playerIdx, tile, from: game.lastDiscarder });
       if (game.rules.kuikae) cpu.kuikaeForbidden = [raw];
       showGameToast(`${cpu.name} ポン！`, 'blue');
+      showCallout('ポン！', 'call', cpu.name);
+      sfx('call');
     } else if (type === 'chi') {
       const choice = chiChoice || cpuDecideChi(cpu, tile);
       if (!choice) { proceedToNextTurn(); return; }
@@ -2345,6 +2392,8 @@
         cpu.kuikaeForbidden = forbidden;
       }
       showGameToast(`${cpu.name} チー！`, 'blue');
+      showCallout('チー！', 'call', cpu.name);
+      sfx('call');
     } else if (type === 'kan') {
       const removed = [];
       for (let i = cpu.hand.length - 1; i >= 0 && removed.length < 3; i--) {
@@ -2354,6 +2403,8 @@
       cpu.melds.push({ type: 'kan', tiles: [...removed, tile] });
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'minkan', p: playerIdx, tile, from: game.lastDiscarder });
       showGameToast(`${cpu.name} カン（明槓）！`, 'blue');
+      showCallout('カン！', 'call', cpu.name);
+      sfx('call');
     }
     cpu.isMenzen = false;
     game.currentTurn = playerIdx;
@@ -2413,6 +2464,8 @@
       cpu.melds.push({ type: 'ankan', tiles: kanTiles });
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'ankan', p: playerIdx, tile: opt.tile });
       showGameToast(`${cpu.name} 暗槓（アンカン）！`, 'blue');
+      showCallout('カン！', 'call', cpu.name);
+      sfx('call');
     } else {
       const meld = cpu.melds.find(m => m.type === 'pon' && normTileCode(m.tiles[0]) === opt.tile);
       if (!meld) return false;
@@ -2425,6 +2478,8 @@
       meld.tiles = [...meld.tiles, added];
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'kakan', p: playerIdx, tile: opt.tile });
       showGameToast(`${cpu.name} 加槓（カカン）！`, 'blue');
+      showCallout('カン！', 'call', cpu.name);
+      sfx('call');
     }
     cpu.tsumoTile = null;
 
@@ -2671,6 +2726,7 @@
     if (!DOM.gameResultModal) return;
 
     DOM.resultModalTitle.textContent = isTsumo ? '🀄️ ツモ和了（ツモアガリ）！' : '🀄️ ロン和了（栄和）！';
+    showCallout(isTsumo ? 'ツモ！' : 'ロン！', 'agari', winner.name);
     DOM.resultWinnerAvatar.textContent = winner.avatar;
     DOM.resultWinnerName.textContent = winner.name;
     DOM.resultAgariType.textContent = isTsumo ? '門前清自摸和' : `放銃: ${PLAYER_NAMES[loserIdx]}`;
@@ -2688,9 +2744,10 @@
     game.doraIndicators.forEach(t => DOM.resultDoraTiles.appendChild(createTileDom(t, true)));
 
     DOM.resultYakuList.innerHTML = '';
-    (scoreRes.yakuList || []).forEach(y => {
+    (scoreRes.yakuList || []).forEach((y, i) => {
       const li = document.createElement('li');
-      li.className = 'yaku-badge-item';
+      li.className = 'yaku-badge-item yaku-stamp';
+      li.style.animationDelay = `${i * 0.14}s`;
       li.innerHTML = `<span class="yaku-name">${y.name}</span><span class="yaku-han">${y.isYakuman ? '役満' : `${y.han}翻`}</span>`;
       DOM.resultYakuList.appendChild(li);
     });
