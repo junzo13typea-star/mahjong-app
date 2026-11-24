@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v34'; // 対局コールアウト演出 (リーチ・鳴き・和了の中央表示＋役スタンプ) を配信するため更新
+const CACHE_NAME = 'mahjong-ai-v35'; // M1: CPU個性パラメータ (レン攻撃/葵バランス/龍馬守備)＋席カードの個性タグ＋キャラ別セリフの不具合修正を配信するため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

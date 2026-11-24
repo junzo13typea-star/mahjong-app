@@ -4065,3 +4065,15 @@ body.fs-mode #tab-game {
 @media (prefers-reduced-motion: reduce) {
   .point-stick, .agari-drama-show .agari-drama-tile, .agari-drama-show .agari-drama-label { animation-duration: 0.01s !important; }
 }
+
+/* ===== v35/M1: CPU個性タグ (席カードの名前横に打ち筋を表示) ===== */
+.cpu-style-tag {
+  display: inline-block;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  padding: 3px 6px; margin-left: 4px; border-radius: 8px;
+  vertical-align: middle; white-space: nowrap;
+  border: 1px solid currentColor;
+}
+.cpu-style-attack { color: #fca5a5; background: rgba(239, 68, 68, 0.22); }
+.cpu-style-balance { color: #93c5fd; background: rgba(59, 130, 246, 0.22); }
+.cpu-style-defense { color: #86efac; background: rgba(34, 197, 94, 0.22); }

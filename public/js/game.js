@@ -171,6 +171,30 @@
   const CPU_FACES = { riichi: '😤', pon: '😏', chi: '😏', kan: '😎', agari: '😆', dealIn: '😖' };
   const SEAT_IDS = { 1: 'seatShimocha', 2: 'seatToimen', 3: 'seatKamicha' };
 
+  // ===== v35/M1: CPU個性パラメータ =====
+  // 席順固定: 1=葵(バランス) / 2=レン(攻撃) / 3=龍馬(守備)。3人麻雀では龍馬が卓外。
+  // 各値の使い道: riichiBonus / riichiBoundaryChance → リーチ率 (cpuRiichiDecision)、
+  // callSkipChance → 門前1向聴での鳴き見送り率 (cpuWantsPon / cpuDecideChi)、
+  // callSameShantenRelaxed / callKanRelaxed → 攻撃型の鳴きの幅、
+  // foldShanten / foldDanger → リーチ者への押し引き (chooseCpuBestDiscard)。
+  // プレイヤー(0番)は人間なので cpuPersona(0) は既定値(葵)を返す安全側の設計。
+  const CPU_PERSONALITIES = {
+    1: { label: '葵', style: 'バランス', riichiBonus: 0, riichiBoundaryChance: 0.35,
+         callSkipChance: 0.5, callSameShantenRelaxed: false, callKanRelaxed: false,
+         foldShanten: 2, foldDanger: 0.75 },
+    2: { label: 'レン', style: '攻撃', riichiBonus: 1, riichiBoundaryChance: 0.6,
+         callSkipChance: 0.15, callSameShantenRelaxed: true, callKanRelaxed: true,
+         foldShanten: 3, foldDanger: 0.95 },
+    3: { label: '龍馬', style: '守備', riichiBonus: -1, riichiBoundaryChance: 0.1,
+         callSkipChance: 0.85, callSameShantenRelaxed: false, callKanRelaxed: false,
+         foldShanten: 1, foldDanger: 0.45 },
+  };
+  const CPU_PERSONALITY_DEFAULT = CPU_PERSONALITIES[1];
+  function cpuPersona(playerIdx) {
+    if (typeof playerIdx !== 'number') return CPU_PERSONALITY_DEFAULT;
+    return CPU_PERSONALITIES[playerIdx] || CPU_PERSONALITY_DEFAULT;
+  }
+
   function showSpeech(playerIdx, kind) {
     try {
       if (playerIdx === 0) return;
@@ -178,8 +202,10 @@
       if (!seat) return;
       const card = seat.querySelector('.player-info-card');
       if (!card) return;
-      const player = game.players[playerIdx];
-      const table = (player && CPU_LINES[player.name]) || CPU_LINE_FALLBACK;
+      // v35/M1: player.name は 'CPU 葵 (アオイ)' のフル表記のため短名では引けない。
+      // 席順から個性表を引いて短名で参照する (従来は全員が汎用セリフに落ちていた)。
+      const persona = cpuPersona(playerIdx);
+      const table = (persona && CPU_LINES[persona.label]) || CPU_LINE_FALLBACK;
       const lines = table[kind] || CPU_LINE_FALLBACK[kind];
       if (!lines || !lines.length) return;
       const old = card.querySelector('.speech-bubble');
@@ -1581,8 +1607,11 @@
     const oppRiichi = game.players.some((p, i) => i !== playerIdx && p.isRiichi);
     if (oppRiichi) score -= 1; // 先行リーチがあると反撃されやすい
 
+    // v35/M1: 個性でリーチ率を分離 (攻撃: +1・境界60% / バランス: ±0・35% / 守備: -1・境界10%)
+    const persona = cpuPersona(playerIdx);
+    score += persona.riichiBonus;
     if (score >= 2) return true;
-    if (score === 1) return Math.random() < 0.35; // 境界は少しだけ揺らして画一化を避ける
+    if (score === 1) return Math.random() < persona.riichiBoundaryChance; // 境界は少しだけ揺らして画一化を避ける
     return false;
   }
 
@@ -1723,12 +1752,16 @@
 
     // リーチ者がいる場合の押し引き (聴牌なら押し、1向聴は安全優先、
     // 2向聴以上はベタオリ)。プレイヤー位置が分かる呼び出しでのみ有効。
+    // v35/M1: 個性で分離。foldShanten 以上の向聴なら全牌から最安全牌へベタオリ、
+    // それ未満なら最速候補の中で最安全の牌を押し、危険度が foldDanger 以上なら現物へ折れる。
+    // (攻撃: 3向聴からベタオリ・危険度0.95まで押す / バランス: 2向聴・0.75 / 守備: 1向聴・0.45)
     const riichiOpps = (typeof playerIdx === 'number' && game.players[playerIdx])
       ? game.players.filter((p, i) => i !== playerIdx && p.isRiichi)
       : [];
     if (riichiOpps.length > 0 && minShanten >= 1) {
+      const persona = cpuPersona(playerIdx);
       const dangerOf = t => Math.max(...riichiOpps.map(o => tileDangerVs(t, o, hand14)));
-      if (minShanten >= 2) {
+      if (minShanten >= persona.foldShanten) {
         const ranked = [...targetTiles].sort((a, b) => {
           const dd = dangerOf(a) - dangerOf(b);
           if (Math.abs(dd) > 0.001) return dd;
@@ -1737,7 +1770,7 @@
         return ranked[0];
       }
       const safeCandidates = [...candidates].sort((a, b) => dangerOf(a) - dangerOf(b));
-      if (dangerOf(safeCandidates[0]) >= 0.75) {
+      if (dangerOf(safeCandidates[0]) >= persona.foldDanger) {
         const genbutsu = targetTiles.find(t => dangerOf(t) === 0);
         if (genbutsu) return genbutsu; // 全候補が危険なら完全安全牌に折れる
       }
@@ -2422,6 +2455,7 @@
 
   function cpuWantsPon(cpu, tile) {
     const raw = normTileCode(tile);
+    const persona = cpuPersona(cpu.idx);
     const sameIdx = [];
     cpu.hand.forEach((t, i) => { if (normTileCode(t) === raw) sameIdx.push(i); });
     if (sameIdx.length < 2) return false;
@@ -2433,18 +2467,23 @@
     const isYakuhaiSet = ['5z', '6z', '7z', game.roundWind, cpu.seatWind].includes(raw);
     const doraSet = countDora(tripTiles, game.doraIndicators) > 0;
     if (sAfter < sBefore) {
-      // 門前1向聴のリーチ狙いは半分見送る
-      if (cpu.isMenzen && sBefore === 1 && !isYakuhaiSet && Math.random() < 0.5) return false;
+      // v35/M1: 門前1向聴のリーチ狙いは個性に応じた確率で見送る (攻撃15% / バランス50% / 守備85%)
+      if (cpu.isMenzen && sBefore === 1 && !isYakuhaiSet && Math.random() < persona.callSkipChance) return false;
       if (cpu.isMenzen && !cpuHasYakuPotential(cpu, handAfter, tripTiles)) return false;
       return true;
     }
-    // 同向聴では役牌・ドラ刻子のみ (副露済みかテンパイ近傍に限る)
+    // 同向聴では役牌・ドラ刻子のみ (副露済みかテンパイ近傍に限る)。
+    // v35/M1: 攻撃型は役の見込みがあれば役牌・ドラ以外でも鳴く。
+    if (persona.callSameShantenRelaxed && cpuHasYakuPotential(cpu, handAfter, tripTiles)) {
+      return (!cpu.isMenzen || sBefore <= 1);
+    }
     return (isYakuhaiSet || doraSet) && (!cpu.isMenzen || sBefore <= 1);
   }
 
   function cpuDecideChi(cpu, tile) {
     const raw = normTileCode(tile);
     if (raw[1] === 'z') return null;
+    const persona = cpuPersona(cpu.idx);
     const suit = raw[1];
     const num = parseInt(raw[0], 10);
     const findIdx = (n) => cpu.hand.findIndex(t => normTileCode(t) === `${n}${suit}`);
@@ -2461,13 +2500,15 @@
       if (!best || sAfter < best.sAfter) best = { ia, ib, sAfter, handAfter };
     }
     if (!best || best.sAfter >= sBefore) return null;
-    if (cpu.isMenzen && sBefore === 1 && Math.random() < 0.5) return null;
+    // v35/M1: 門前1向聴のリーチ狙いは個性に応じた確率で見送る (攻撃15% / バランス50% / 守備85%)
+    if (cpu.isMenzen && sBefore === 1 && Math.random() < persona.callSkipChance) return null;
     if (cpu.isMenzen && !cpuHasYakuPotential(cpu, best.handAfter, [cpu.hand[best.ia], cpu.hand[best.ib], tile])) return null;
     return best;
   }
 
   function cpuWantsMinkan(cpu, tile) {
     const raw = normTileCode(tile);
+    const persona = cpuPersona(cpu.idx);
     const count = cpu.hand.filter(t => normTileCode(t) === raw).length;
     if (count !== 3) return false;
     const handAfter = cpu.hand.filter(t => normTileCode(t) !== raw);
@@ -2475,6 +2516,8 @@
     const sAfter = cpuShanten(handAfter, cpu.melds.length + 1);
     if (sAfter > sBefore) return false;
     const isYakuhaiSet = ['5z', '6z', '7z', game.roundWind, cpu.seatWind].includes(raw);
+    // v35/M1: 攻撃型は役牌・ドラでなくても明槓する (嶺上・ドラ増で押す)。
+    if (persona.callKanRelaxed) return true;
     return isYakuhaiSet || !cpu.isMenzen || countDora([tile, tile, tile, tile], game.doraIndicators) > 0;
   }
 
