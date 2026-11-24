@@ -103,6 +103,28 @@
     requestAnimationFrame(step);
   }
 
+  // ================= 和了の「間」演出 (v34) =================
+  // 結果モーダルを開く直前、和了牌を画面中央で大きく見せて一拍溜める。
+  // モーダル自体は即座に開き、本演出はその上に重なるだけ (進行はブロックしない)。
+  // 戻り値: 演出の表示ミリ秒 (モーダル内の段階演出の開始オフセットに使う)。
+  function playDramaOverlay(tile, labelText) {
+    const ms = Math.min(tempoDelay(950), 1150);
+    try {
+      const overlay = document.getElementById('agariDramaOverlay');
+      const tileBox = document.getElementById('agariDramaTile');
+      const label = document.getElementById('agariDramaLabel');
+      if (!overlay || !tileBox) return 0;
+      tileBox.innerHTML = '';
+      tileBox.appendChild(createTileDom(tile, false));
+      if (label) label.textContent = labelText || '';
+      overlay.classList.remove('agari-drama-show');
+      void overlay.offsetWidth;
+      overlay.classList.add('agari-drama-show');
+      setTimeout(() => { try { overlay.classList.remove('agari-drama-show'); } catch (e) {} }, ms);
+      return ms;
+    } catch (e) { return 0; }
+  }
+
   // ================= 対局コールアウト演出 (v32) =================
   // リーチ・鳴き・和了の瞬間、画面中央に大きな文字を弾けさせる市販ゲーム風の演出。
   // 対局ロジックのタイミングには一切干渉しない (fire-and-forget)。
@@ -230,6 +252,7 @@
       gameRemainingWall: document.getElementById('gameRemainingWall'),
       centerRoundText: document.getElementById('centerRoundText'),
       gameDoraTile: document.getElementById('gameDoraTile'),
+      tableSticks: document.getElementById('tableSticks'),
       turnIndicator: document.getElementById('turnIndicator'),
       btnNewGame: document.getElementById('btnNewGame'),
       btnToggleAssist: document.getElementById('btnToggleAssist'),
@@ -1926,6 +1949,7 @@
     game.riichiSticks = 0;
     if (window.MahjongKifu) window.MahjongKifu.endRound({ type: 'ron', winners: winners.map(w => w.idx), loser: loserIdx, tile, scoresAfter: game.players.map(p => p.score) });
     game.lastRoundRenchan = winners.some(w => game.players[w.idx].seatWind === '1z');
+    playDramaOverlay(tile, winners.length > 1 ? 'ダブルロン！' : 'ロン！');
     showMultiAgariModal(winners, loserIdx, tile);
   }
 
@@ -2728,7 +2752,8 @@
     if (window.MahjongKifu) window.MahjongKifu.endRound({ type: isTsumo ? 'tsumo' : 'ron', winner: winnerIdx, loser: isTsumo ? null : loserIdx, tile: winTile, scoresAfter: game.players.map(p => p.score) });
 
     game.lastRoundRenchan = (winner.seatWind === '1z');
-    showAgariModal(winner, loserIdx, winTile, isTsumo, scoreRes);
+    const dramaMs = playDramaOverlay(winTile, `${winner.name} ${isTsumo ? 'ツモ！' : 'ロン！'}`);
+    showAgariModal(winner, loserIdx, winTile, isTsumo, scoreRes, dramaMs / 1000);
   }
 
   // 途中流局 (九種九牌・四風連打・四家立直・四槓散了): 点数移動なし、親は連荘
@@ -2828,11 +2853,12 @@
     return `${windChar}${localNum}局`;
   }
 
-  function showAgariModal(winner, loserIdx, winTile, isTsumo, scoreRes) {
+  function showAgariModal(winner, loserIdx, winTile, isTsumo, scoreRes, fxDelaySec) {
+    const fx = fxDelaySec || 0; // v34: 「間」演出の間、モーダル内の段階演出を遅らせる
     if (!DOM.gameResultModal) return;
 
     DOM.resultModalTitle.textContent = isTsumo ? '🀄️ ツモ和了（ツモアガリ）！' : '🀄️ ロン和了（栄和）！';
-    showCallout(isTsumo ? 'ツモ！' : 'ロン！', 'agari', winner.name);
+    if (!fx) showCallout(isTsumo ? 'ツモ！' : 'ロン！', 'agari', winner.name); // v34: 「間」演出中はラベルが兼ねる
     if (winner.idx !== 0) showSpeech(winner.idx, 'agari');
     if (!isTsumo && loserIdx != null && loserIdx !== 0) showSpeech(loserIdx, 'dealIn');
     DOM.resultWinnerAvatar.textContent = winner.avatar;
@@ -2853,14 +2879,14 @@
     game.doraIndicators.forEach((t, i) => {
       const el = createTileDom(t, true);
       el.classList.add('dora-flip');
-      el.style.animationDelay = `${0.15 + i * 0.3}s`;
+      el.style.animationDelay = `${fx + 0.15 + i * 0.3}s`;
       DOM.resultDoraTiles.appendChild(el);
     });
     if (DOM.resultUraSection && DOM.resultUraTiles) {
       if (winner.isRiichi && game.uraDoraIndicators && game.uraDoraIndicators.length) {
         DOM.resultUraSection.style.display = '';
         DOM.resultUraTiles.innerHTML = '';
-        const base = 0.15 + game.doraIndicators.length * 0.3;
+        const base = fx + 0.15 + game.doraIndicators.length * 0.3;
         game.uraDoraIndicators.forEach((t, i) => {
           const el = createTileDom(t, true);
           el.classList.add('dora-flip');
@@ -2876,13 +2902,18 @@
     (scoreRes.yakuList || []).forEach((y, i) => {
       const li = document.createElement('li');
       li.className = 'yaku-badge-item yaku-stamp';
-      li.style.animationDelay = `${i * 0.14}s`;
+      li.style.animationDelay = `${fx + i * 0.14}s`;
       li.innerHTML = `<span class="yaku-name">${y.name}</span><span class="yaku-han">${y.isYakuman ? '役満' : `${y.han}翻`}</span>`;
       DOM.resultYakuList.appendChild(li);
     });
 
     // 点数は 0 → 確定値へカウントアップ表示 (最終値は必ず正確な値で止まる)
-    animateScoreCount(DOM.resultScorePoints, scoreRes.totalPoints || 0);
+    if (fx > 0) {
+      DOM.resultScorePoints.textContent = '0 点';
+      setTimeout(() => animateScoreCount(DOM.resultScorePoints, scoreRes.totalPoints || 0), fx * 1000);
+    } else {
+      animateScoreCount(DOM.resultScorePoints, scoreRes.totalPoints || 0);
+    }
     DOM.resultScoreRank.textContent = scoreRes.rankTitle || '和了';
     DOM.resultScoreDetails.textContent = scoreRes.isYakuman
       ? `${scoreRes.rankTitle || '役満'} (本場加算含む)`
@@ -2988,6 +3019,25 @@
       game.riichiSticksShown = game.riichiSticks;
     }
     if (DOM.gameRemainingWall) DOM.gameRemainingWall.textContent = game.wall.length;
+
+    // v34: 供託・本場を卓中央に点棒グラフィックで表示 (増減した時だけ再描画)
+    if (DOM.tableSticks) {
+      const key = `${game.riichiSticks}/${game.honba}`;
+      if (game._sticksKey !== key) {
+        game._sticksKey = key;
+        DOM.tableSticks.innerHTML = '';
+        for (let i = 0; i < game.riichiSticks && i < 6; i++) {
+          const s = document.createElement('div');
+          s.className = 'point-stick s1000';
+          DOM.tableSticks.appendChild(s);
+        }
+        for (let i = 0; i < game.honba && i < 8; i++) {
+          const s = document.createElement('div');
+          s.className = 'point-stick s100';
+          DOM.tableSticks.appendChild(s);
+        }
+      }
+    }
 
     // ドラ表示牌 (カンで増えた分も含め全て表示)
     if (DOM.gameDoraTile) {

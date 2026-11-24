@@ -3967,3 +3967,101 @@ body.fs-mode #tab-game {
 @media (prefers-reduced-motion: reduce) {
   .score-delta-pop, .dora-flip, .speech-bubble { animation-duration: .01s !important; }
 }
+
+/* ===== v34: 打牌フライト強化 (既存の kawaDrop を上書き: 移動距離と着地の衝撃) ===== */
+.kawa-just-placed { animation-duration: 0.42s; }
+@keyframes kawaDropFromBottom {
+  0% { transform: translateY(150px) scale(1.28); opacity: 0.4; box-shadow: 0 22px 30px rgba(0,0,0,0.55); }
+  55% { transform: translateY(0) scale(1.0); opacity: 1; box-shadow: 0 3px 6px rgba(0,0,0,0.45); }
+  72% { transform: translateY(2px) scale(0.95); box-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  86% { transform: translateY(-1px) scale(1.015); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes kawaDropFromTop {
+  0% { transform: translateY(-150px) rotate(180deg) scale(1.28); opacity: 0.4; box-shadow: 0 22px 30px rgba(0,0,0,0.55); }
+  55% { transform: translateY(0) rotate(180deg) scale(1.0); opacity: 1; box-shadow: 0 3px 6px rgba(0,0,0,0.45); }
+  72% { transform: translateY(-2px) rotate(180deg) scale(0.95); box-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  86% { transform: translateY(1px) rotate(180deg) scale(1.015); }
+  100% { transform: translateY(0) rotate(180deg) scale(1); opacity: 1; }
+}
+@keyframes kawaDropFromRight {
+  0% { transform: translateX(150px) rotate(90deg) scale(1.28); opacity: 0.4; box-shadow: 0 22px 30px rgba(0,0,0,0.55); }
+  55% { transform: translateX(0) rotate(90deg) scale(1.0); opacity: 1; box-shadow: 0 3px 6px rgba(0,0,0,0.45); }
+  72% { transform: translateX(2px) rotate(90deg) scale(0.95); box-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  86% { transform: translateX(-1px) rotate(90deg) scale(1.015); }
+  100% { transform: translateX(0) rotate(90deg) scale(1); opacity: 1; }
+}
+@keyframes kawaDropFromLeft {
+  0% { transform: translateX(-150px) rotate(-90deg) scale(1.28); opacity: 0.4; box-shadow: 0 22px 30px rgba(0,0,0,0.55); }
+  55% { transform: translateX(0) rotate(-90deg) scale(1.0); opacity: 1; box-shadow: 0 3px 6px rgba(0,0,0,0.45); }
+  72% { transform: translateX(-2px) rotate(-90deg) scale(0.95); box-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  86% { transform: translateX(1px) rotate(-90deg) scale(1.015); }
+  100% { transform: translateX(0) rotate(-90deg) scale(1); opacity: 1; }
+}
+
+/* ===== v34: 和了の「間」演出 ===== */
+.agari-drama-overlay {
+  position: fixed; inset: 0; z-index: 260;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(2, 20, 14, 0.55);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0.18s;
+}
+.agari-drama-overlay.agari-drama-show { opacity: 1; visibility: visible; }
+.agari-drama-inner { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.agari-drama-tile > * {
+  transform: scale(1.85);
+  box-shadow: 0 0 34px rgba(245, 197, 66, 0.75), 0 14px 30px rgba(0,0,0,0.6);
+  border-radius: 8px;
+}
+.agari-drama-show .agari-drama-tile { animation: dramaTileIn 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
+@keyframes dramaTileIn {
+  0% { transform: scale(0.5) rotate(-5deg); opacity: 0; }
+  60% { transform: scale(1.12) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+.agari-drama-label {
+  color: #f5c542; font-size: clamp(20px, 4.5vw, 32px); font-weight: 800;
+  letter-spacing: 0.12em; text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+}
+.agari-drama-show .agari-drama-label { animation: dramaLabelIn 0.4s 0.12s ease-out both; }
+@keyframes dramaLabelIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== v34: 卓上の点棒表示 ===== */
+.table-sticks {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  margin-top: 5px; min-height: 0;
+}
+.point-stick {
+  width: 62px; height: 9px; border-radius: 5px;
+  background: linear-gradient(180deg, #fffdf5, #e9e4d6);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(0,0,0,0.12);
+  position: relative;
+  animation: stickPlace 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+}
+.point-stick.s1000::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #d32f2f; transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1.5px rgba(211,47,47,0.35);
+}
+.point-stick.s100 {
+  background-color: #f7f3e8;
+  background-image:
+    radial-gradient(circle at 10px 50%, #374151 1.7px, transparent 1.9px),
+    radial-gradient(circle at 24px 50%, #374151 1.7px, transparent 1.9px),
+    radial-gradient(circle at 38px 50%, #374151 1.7px, transparent 1.9px),
+    radial-gradient(circle at 52px 50%, #374151 1.7px, transparent 1.9px),
+    linear-gradient(180deg, #fffdf5, #e9e4d6);
+}
+@keyframes stickPlace {
+  0% { opacity: 0; transform: translateY(-7px) scale(1.18); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .point-stick, .agari-drama-show .agari-drama-tile, .agari-drama-show .agari-drama-label { animation-duration: 0.01s !important; }
+}
