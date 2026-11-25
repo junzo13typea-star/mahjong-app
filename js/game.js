@@ -46,6 +46,7 @@
     pendingCpuRons: [],  // 打牌に対してロンできるCPU一覧 (ダブロン解決用)
     isAssisting: true,   // 待ち牌アシスト表示
     tempo: 'normal',     // 対局テンポ: 'slow' | 'normal' | 'fast' (CPU思考時間の倍率)
+    difficulty: 'normal', // CPUの強さ: 'easy' | 'normal' | 'hard' (判断ミス率と守備精度)
     turnTimer: null,     // CPUターンタイマー
 
     // 演出用 (視覚・聴覚のみ。対局ロジックには影響しない)
@@ -195,6 +196,32 @@
     return CPU_PERSONALITIES[playerIdx] || CPU_PERSONALITY_DEFAULT;
   }
 
+  // ===== v36/M2: 難易度設定 =====
+  // よわい: 判断ミス25%・守備ゆるめ (ベタオリが1向聴遅く、危険牌への許容+0.2)。
+  // ふつう: 従来の打ち筋そのまま (ミス0・補正0。既存テストのベースライン維持)。
+  // つよい: 判断ミス2%・守備きっちり (ベタオリが1向聴早く、危険牌への許容-0.15)。
+  // 個性 (M1) の上に乗る全体補正で、席ごとの個性差は残したまま強さだけを変える。
+  const DIFFICULTY_LEVELS = {
+    easy: { label: 'よわい', mistakeRate: 0.25, foldShantenDelta: 1, foldDangerDelta: 0.2 },
+    normal: { label: 'ふつう', mistakeRate: 0, foldShantenDelta: 0, foldDangerDelta: 0 },
+    hard: { label: 'つよい', mistakeRate: 0.02, foldShantenDelta: -1, foldDangerDelta: -0.15 },
+  };
+  const DIFFICULTY_LABELS = { easy: 'よわい', normal: 'ふつう', hard: 'つよい' };
+  function difficultyParams() {
+    return DIFFICULTY_LEVELS[game.difficulty] || DIFFICULTY_LEVELS.normal;
+  }
+  // 実際の打牌でのみ使う判断ミス: 最善手以外から1枚をランダムに切る。
+  // mistakeRate が 0 のときは Math.random を消費しない (シード付きテストの流れを変えない)。
+  function applyDifficultyMistake(best, targetTiles, allowMistake) {
+    if (!allowMistake) return best;
+    const p = difficultyParams();
+    if (!p || !p.mistakeRate) return best;
+    if (Math.random() >= p.mistakeRate) return best;
+    const others = targetTiles.filter(t => t !== best);
+    if (!others.length) return best;
+    return others[Math.floor(Math.random() * others.length)];
+  }
+
   function showSpeech(playerIdx, kind) {
     try {
       if (playerIdx === 0) return;
@@ -268,6 +295,7 @@
       btnRuleKuitan: document.getElementById('btnRuleKuitan'),
       btnRuleKuikae: document.getElementById('btnRuleKuikae'),
       btnTempo: document.getElementById('btnTempo'),
+      btnDifficulty: document.getElementById('btnDifficulty'),
       btnFullscreen: document.getElementById('btnFullscreen'),
       tabGame: document.getElementById('tab-game'),
       btnSfxToggle: document.getElementById('btnSfxToggle'),
@@ -405,7 +433,8 @@
           playerCount: game.playerCount,
           matchLength: game.matchLength,
           isAssisting: game.isAssisting,
-          tempo: game.tempo
+          tempo: game.tempo,
+          difficulty: game.difficulty
         }));
       }
     } catch (e) { /* 保存できなくても対局は継続する */ }
@@ -422,6 +451,7 @@
     if (s.matchLength === 'tonpuu' || s.matchLength === 'hanchan') game.matchLength = s.matchLength;
     if (typeof s.isAssisting === 'boolean') game.isAssisting = s.isAssisting;
     if (s.tempo === 'slow' || s.tempo === 'normal' || s.tempo === 'fast') game.tempo = s.tempo;
+    if (s.difficulty === 'easy' || s.difficulty === 'normal' || s.difficulty === 'hard') game.difficulty = s.difficulty;
   }
 
   // 復元した設定をコントロール類の表示に反映する
@@ -451,6 +481,10 @@
     if (DOM.btnTempo) {
       DOM.btnTempo.textContent = `テンポ: ${TEMPO_LABELS[game.tempo] || 'ふつう'}`;
       DOM.btnTempo.classList.toggle('active', game.tempo === 'fast');
+    }
+    if (DOM.btnDifficulty) {
+      DOM.btnDifficulty.textContent = `難易度: ${DIFFICULTY_LABELS[game.difficulty] || 'ふつう'}`;
+      DOM.btnDifficulty.classList.toggle('active', game.difficulty === 'hard');
     }
     if (DOM.btnToggleAssist) {
       DOM.btnToggleAssist.textContent = `💡 アシスト: ${game.isAssisting ? 'ON' : 'OFF'}`;
@@ -868,6 +902,16 @@
         syncSettingsUi();
         saveSettings();
         showGameToast(`対局テンポ: ${TEMPO_LABELS[game.tempo]} (CPUの思考時間)`);
+      });
+    }
+
+    // 6.2b CPUの強さ (難易度: よわい→ふつう→つよい の循環。即時反映・保存する)
+    if (DOM.btnDifficulty) {
+      DOM.btnDifficulty.addEventListener('click', () => {
+        game.difficulty = game.difficulty === 'easy' ? 'normal' : game.difficulty === 'normal' ? 'hard' : 'easy';
+        syncSettingsUi();
+        saveSettings();
+        showGameToast(`CPUの強さ: ${DIFFICULTY_LABELS[game.difficulty]} (判断ミス率と守備の精度が変わります)`);
       });
     }
 
@@ -1548,7 +1592,8 @@
     const fullHand = [...cpu.hand, drawnTile];
 
     // 実際に切る牌でテンパイするか (その切り方でテンパイしないならリーチしない)
-    const discard = chooseCpuBestDiscard(fullHand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx);
+    // 評価用の呼び出しなので判断ミスは入れない (allowMistake=false)。
+    const discard = chooseCpuBestDiscard(fullHand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx, false);
     const idx = fullHand.indexOf(discard);
     if (idx < 0) return false;
     const hand13 = fullHand.filter((_, i) => i !== idx);
@@ -1691,7 +1736,7 @@
       discardTile = drawnTile;
       isTsumogiri = true;
     } else {
-      discardTile = chooseCpuBestDiscard(fullHand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx);
+      discardTile = chooseCpuBestDiscard(fullHand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx, true);
       isTsumogiri = (discardTile === drawnTile);
     }
 
@@ -1726,7 +1771,9 @@
     return danger;
   }
 
-  function chooseCpuBestDiscard(hand14, meldCount, forbiddenTiles, playerIdx) {
+  // allowMistake: true のときだけ難易度の判断ミスを入れる (実際の打牌)。
+  // リーチ可否の評価 (cpuRiichiDecision) では false を渡し、ミスで見逃さない。
+  function chooseCpuBestDiscard(hand14, meldCount, forbiddenTiles, playerIdx, allowMistake) {
     let minShanten = 99;
     const candidates = [];
     const shantenByTile = new Map();
@@ -1755,30 +1802,40 @@
     // v35/M1: 個性で分離。foldShanten 以上の向聴なら全牌から最安全牌へベタオリ、
     // それ未満なら最速候補の中で最安全の牌を押し、危険度が foldDanger 以上なら現物へ折れる。
     // (攻撃: 3向聴からベタオリ・危険度0.95まで押す / バランス: 2向聴・0.75 / 守備: 1向聴・0.45)
+    // v36/M2: 難易度で守備精度を補正 (よわい: 1向聴遅く折れる・危険許容+0.2 /
+    // ふつう: 補正なし / つよい: 1向聴早く折れる・危険許容-0.15)。
     const riichiOpps = (typeof playerIdx === 'number' && game.players[playerIdx])
       ? game.players.filter((p, i) => i !== playerIdx && p.isRiichi)
       : [];
+    let best;
     if (riichiOpps.length > 0 && minShanten >= 1) {
       const persona = cpuPersona(playerIdx);
+      const dp = difficultyParams();
+      const foldShanten = Math.max(1, persona.foldShanten + (dp.foldShantenDelta || 0));
+      const foldDanger = Math.min(0.99, Math.max(0.05, persona.foldDanger + (dp.foldDangerDelta || 0)));
       const dangerOf = t => Math.max(...riichiOpps.map(o => tileDangerVs(t, o, hand14)));
-      if (minShanten >= persona.foldShanten) {
+      if (minShanten >= foldShanten) {
         const ranked = [...targetTiles].sort((a, b) => {
           const dd = dangerOf(a) - dangerOf(b);
           if (Math.abs(dd) > 0.001) return dd;
           return (shantenByTile.get(a) ?? 99) - (shantenByTile.get(b) ?? 99);
         });
-        return ranked[0];
+        best = ranked[0];
+      } else {
+        const safeCandidates = [...candidates].sort((a, b) => dangerOf(a) - dangerOf(b));
+        if (dangerOf(safeCandidates[0]) >= foldDanger) {
+          const genbutsu = targetTiles.find(t => dangerOf(t) === 0);
+          best = genbutsu || safeCandidates[0];
+        } else {
+          best = safeCandidates[0];
+        }
       }
-      const safeCandidates = [...candidates].sort((a, b) => dangerOf(a) - dangerOf(b));
-      if (dangerOf(safeCandidates[0]) >= persona.foldDanger) {
-        const genbutsu = targetTiles.find(t => dangerOf(t) === 0);
-        if (genbutsu) return genbutsu; // 全候補が危険なら完全安全牌に折れる
-      }
-      return safeCandidates[0];
+    } else {
+      candidates.sort((a, b) => getDiscardSafetyScore(b) - getDiscardSafetyScore(a));
+      best = candidates[0] || hand14[hand14.length - 1];
     }
 
-    candidates.sort((a, b) => getDiscardSafetyScore(b) - getDiscardSafetyScore(a));
-    return candidates[0] || hand14[hand14.length - 1];
+    return applyDifficultyMistake(best, targetTiles, allowMistake);
   }
 
   function getDiscardSafetyScore(tile) {
@@ -2602,7 +2659,7 @@
   function cpuDiscardAfterCall(playerIdx) {
     const cpu = game.players[playerIdx];
     cpu.tsumoTile = null; // 鳴き後はツモ牌なしで手牌から切る
-    const discardTile = chooseCpuBestDiscard(cpu.hand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx);
+    const discardTile = chooseCpuBestDiscard(cpu.hand, cpu.melds.length, cpu.kuikaeForbidden, playerIdx, true);
     handleDiscardTile(playerIdx, discardTile, false);
   }
 

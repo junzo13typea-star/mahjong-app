@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v35'; // M1: CPU個性パラメータ (レン攻撃/葵バランス/龍馬守備)＋席カードの個性タグ＋キャラ別セリフの不具合修正を配信するため更新
+const CACHE_NAME = 'mahjong-ai-v36'; // M2: 難易度設定 (よわい/ふつう/つよい・判断ミス率と守備精度) を配信するため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
