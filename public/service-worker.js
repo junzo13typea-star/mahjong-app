@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v41'; // M6: リーチ後オート打牌設定を配信するため更新
+const CACHE_NAME = 'mahjong-ai-v42'; // U13: PWA最終点検でアイコンをPNG化したため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -12,7 +12,11 @@ const ASSETS_TO_CACHE = [
   './js/game.js',
   './js/app.js',
   './js/sw-update.js',
-  './manifest.json'
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+  './apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (event) => {
