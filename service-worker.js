@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v38'; // M4: 和了モーダルの符内訳表示を配信するため更新
+const CACHE_NAME = 'mahjong-ai-v41'; // M6: リーチ後オート打牌設定を配信するため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

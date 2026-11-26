@@ -47,6 +47,7 @@
     isAssisting: true,   // 待ち牌アシスト表示
     tempo: 'normal',     // 対局テンポ: 'slow' | 'normal' | 'fast' (CPU思考時間の倍率)
     difficulty: 'normal', // CPUの強さ: 'easy' | 'normal' | 'hard' (判断ミス率と守備精度)
+    autoRiichiDiscard: false, // M6: リーチ後の打牌を自動ツモ切りにする (ON/OFF・既定OFF)
     turnTimer: null,     // CPUターンタイマー
 
     // 演出用 (視覚・聴覚のみ。対局ロジックには影響しない)
@@ -222,6 +223,22 @@
     return others[Math.floor(Math.random() * others.length)];
   }
 
+  // ===== v41/M6: リーチ後オート打牌 =====
+  // ON のとき、リーチ後にツモ時アクション (ツモ・カン・北抜き) が出てパスを選んだ
+  // 場合、ツモ牌を自動でツモ切りする。アクションが無い場合は従来どおり自動ツモ切り
+  // (checkPlayerTsumoActions の isRiichi && !hasActions 分岐)。
+  // ツモ和了の見逃しを防ぐため、アクションバー表示中はタイマーで勝手に切らず、
+  // プレイヤーがパスを選んだタイミングでのみ自動打牌する。
+  // 宣言打牌 (ippatsuDeclarationPending の間) は対象外: 宣言する牌の選択は手動。
+  function shouldAutoDiscardAfterRiichiPass(player, pending) {
+    if (!game.autoRiichiDiscard) return false;
+    if (!player || !player.isRiichi) return false;
+    if (player.ippatsuDeclarationPending) return false;
+    if (!pending || pending.type !== 'tsumo') return false;
+    if (!pending.drawnTile || player.tsumoTile !== pending.drawnTile) return false;
+    return true;
+  }
+
   function showSpeech(playerIdx, kind) {
     try {
       if (playerIdx === 0) return;
@@ -359,6 +376,7 @@
       btnRuleKuikae: document.getElementById('btnRuleKuikae'),
       btnTempo: document.getElementById('btnTempo'),
       btnDifficulty: document.getElementById('btnDifficulty'),
+      btnAutoRiichiDiscard: document.getElementById('btnAutoRiichiDiscard'),
       btnFullscreen: document.getElementById('btnFullscreen'),
       tabGame: document.getElementById('tab-game'),
       btnSfxToggle: document.getElementById('btnSfxToggle'),
@@ -499,7 +517,8 @@
           matchLength: game.matchLength,
           isAssisting: game.isAssisting,
           tempo: game.tempo,
-          difficulty: game.difficulty
+          difficulty: game.difficulty,
+          autoRiichiDiscard: game.autoRiichiDiscard
         }));
       }
     } catch (e) { /* 保存できなくても対局は継続する */ }
@@ -517,6 +536,7 @@
     if (typeof s.isAssisting === 'boolean') game.isAssisting = s.isAssisting;
     if (s.tempo === 'slow' || s.tempo === 'normal' || s.tempo === 'fast') game.tempo = s.tempo;
     if (s.difficulty === 'easy' || s.difficulty === 'normal' || s.difficulty === 'hard') game.difficulty = s.difficulty;
+    if (typeof s.autoRiichiDiscard === 'boolean') game.autoRiichiDiscard = s.autoRiichiDiscard;
   }
 
   // 復元した設定をコントロール類の表示に反映する
@@ -550,6 +570,10 @@
     if (DOM.btnDifficulty) {
       DOM.btnDifficulty.textContent = `難易度: ${DIFFICULTY_LABELS[game.difficulty] || 'ふつう'}`;
       DOM.btnDifficulty.classList.toggle('active', game.difficulty === 'hard');
+    }
+    if (DOM.btnAutoRiichiDiscard) {
+      DOM.btnAutoRiichiDiscard.textContent = `リーチ後オート打牌: ${game.autoRiichiDiscard ? 'ON' : 'OFF'}`;
+      DOM.btnAutoRiichiDiscard.classList.toggle('active', game.autoRiichiDiscard);
     }
     if (DOM.btnToggleAssist) {
       DOM.btnToggleAssist.textContent = `💡 アシスト: ${game.isAssisting ? 'ON' : 'OFF'}`;
@@ -977,6 +1001,18 @@
         syncSettingsUi();
         saveSettings();
         showGameToast(`CPUの強さ: ${DIFFICULTY_LABELS[game.difficulty]} (判断ミス率と守備の精度が変わります)`);
+      });
+    }
+
+    // 6.2c リーチ後オート打牌 (ON/OFF の切替。即時反映・保存する)
+    if (DOM.btnAutoRiichiDiscard) {
+      DOM.btnAutoRiichiDiscard.addEventListener('click', () => {
+        game.autoRiichiDiscard = !game.autoRiichiDiscard;
+        syncSettingsUi();
+        saveSettings();
+        showGameToast(game.autoRiichiDiscard
+          ? 'リーチ後オート打牌: ON (リーチ後の打牌は自動ツモ切りになります)'
+          : 'リーチ後オート打牌: OFF');
       });
     }
 
@@ -1628,7 +1664,7 @@
     }
     if (removed.length < 3) return; // 安全策 (通常は到達しない)
 
-    player.melds.push({ type: 'kan', tiles: [...removed, tile] });
+    player.melds.push({ type: 'kan', tiles: [...removed, tile], from: game.lastDiscarder }); // M5: パオ判定用に捨て牌の主を記録
     if (window.MahjongKifu) window.MahjongKifu.event({ t: 'minkan', p: 0, tile, from: game.lastDiscarder });
     player.isMenzen = false;
 
@@ -2098,8 +2134,15 @@
     winners.forEach((w, i) => {
       const pts = (w.scoreRes && w.scoreRes.points && typeof w.scoreRes.points === 'object')
         ? w.scoreRes.points : { ron: 0 };
-      loser.score -= pts.ron;
-      game.players[w.idx].score += pts.ron + (i === 0 ? sticksBonus : 0);
+      // M5: パオ（責任払い）が成立している和了者は責任者から満額を受け取る
+      const paoPayments = computePaoPayments({ winnerIdx: w.idx, loserIdx, isTsumo: false, scoreRes: w.scoreRes, playerCount: n });
+      if (paoPayments) {
+        paoPayments.forEach(({ idx, delta }) => { game.players[idx].score += delta; });
+        game.players[w.idx].score += (i === 0 ? sticksBonus : 0);
+      } else {
+        loser.score -= pts.ron;
+        game.players[w.idx].score += pts.ron + (i === 0 ? sticksBonus : 0);
+      }
     });
     game.riichiSticks = 0;
     if (window.MahjongKifu) window.MahjongKifu.endRound({ type: 'ron', winners: winners.map(w => w.idx), loser: loserIdx, tile, scoresAfter: game.players.map(p => p.score) });
@@ -2165,6 +2208,13 @@
     animateScoreCount(DOM.resultScorePoints, total);
     DOM.resultScoreRank.textContent = label;
     DOM.resultScoreDetails.textContent = `合計 ${total}点 (供託は先頭の和了者へ)`;
+
+    // M5: パオ（責任払い）の注記
+    const paoNotes = winners
+      .filter(w => w.scoreRes.pao && typeof w.scoreRes.pao.payer === 'number'
+        && game.players[w.scoreRes.pao.payer] && w.scoreRes.pao.payer !== w.idx)
+      .map(w => `${game.players[w.idx].name}：パオ（${w.scoreRes.pao.yaku}）${game.players[w.scoreRes.pao.payer].name}の責任払い`);
+    if (paoNotes.length > 0) DOM.resultScoreDetails.textContent += `（${paoNotes.join('・')}）`;
 
     // M4: ダブロン/トリプルロンは和了者ごとに符の内訳を出す (役満の和了者は内訳なし)
     if (DOM.resultFuSection && DOM.resultFuList) {
@@ -2379,6 +2429,13 @@
         // パス後はCPU側のロン・鳴きを解決する
         resolveCpuResponses(pending.discarderIdx, pending.tile);
       }
+      // M6: リーチ後のオート打牌。ツモ時アクションを見送った場合、ツモ牌を自動ツモ切りする
+      if (shouldAutoDiscardAfterRiichiPass(game.players[0], pending)) {
+        const drawn = pending.drawnTile;
+        game.turnTimer = setTimeout(() => {
+          handleDiscardTile(0, drawn, true);
+        }, tempoDelay(350));
+      }
       return;
     }
 
@@ -2495,7 +2552,7 @@
       }
     }
 
-    player.melds.push({ type: 'pon', tiles: [...removed, tile] });
+    player.melds.push({ type: 'pon', tiles: [...removed, tile], from: game.lastDiscarder }); // M5: パオ判定用に捨て牌の主を記録
     if (window.MahjongKifu) window.MahjongKifu.event({ t: 'pon', p: 0, tile, from: game.lastDiscarder });
     player.isMenzen = false;
 
@@ -2664,7 +2721,7 @@
         if (normTileCode(cpu.hand[i]) === raw) removed.push(cpu.hand.splice(i, 1)[0]);
       }
       if (removed.length < 2) { proceedToNextTurn(); return; }
-      cpu.melds.push({ type: 'pon', tiles: [...removed, tile] });
+      cpu.melds.push({ type: 'pon', tiles: [...removed, tile], from: game.lastDiscarder }); // M5: パオ判定用に捨て牌の主を記録
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'pon', p: playerIdx, tile, from: game.lastDiscarder });
       if (game.rules.kuikae) cpu.kuikaeForbidden = [raw];
       showGameToast(`${cpu.name} ポン！`, 'blue');
@@ -2698,7 +2755,7 @@
         if (normTileCode(cpu.hand[i]) === raw) removed.push(cpu.hand.splice(i, 1)[0]);
       }
       if (removed.length < 3) { proceedToNextTurn(); return; }
-      cpu.melds.push({ type: 'kan', tiles: [...removed, tile] });
+      cpu.melds.push({ type: 'kan', tiles: [...removed, tile], from: game.lastDiscarder }); // M5: パオ判定用に捨て牌の主を記録
       if (window.MahjongKifu) window.MahjongKifu.event({ t: 'minkan', p: playerIdx, tile, from: game.lastDiscarder });
       showGameToast(`${cpu.name} カン（明槓）！`, 'blue');
       showCallout('カン！', 'call', cpu.name);
@@ -2882,6 +2939,40 @@
     return true;
   }
 
+  /**
+   * M5 (SW v39): パオ（責任払い）の点数配分を純粋計算する。
+   * scoreRes.pao（score.js の detectPao が付与）から、供託を除く点数移動
+   * [{ idx, delta }] を返す。パオでない・情報が無効なら null。
+   * - ロン: 責任者が放銃額の全額を支払う（放銃者は支払わない）。
+   * - ツモ: 責任者が総額の半分を支払い、残りの半分を和了者・責任者以外の
+   *   全員で均等に分ける（4人: 各1/4、3人: 残りの1人が半分）。
+   * 役満の総額は常に 16,000 の倍数のため割り切れる。
+   */
+  function computePaoPayments({ winnerIdx, loserIdx, isTsumo, scoreRes, playerCount }) {
+    const pao = scoreRes && scoreRes.pao;
+    if (!pao || typeof pao.payer !== 'number' || !Number.isFinite(pao.payer)) return null;
+    const payer = pao.payer;
+    if (payer < 0 || payer >= playerCount || payer === winnerIdx) return null;
+    const pts = (scoreRes.points && typeof scoreRes.points === 'object') ? scoreRes.points : null;
+    if (!pts) return null;
+    if (isTsumo) {
+      const total = scoreRes.totalPoints;
+      if (typeof total !== 'number' || total <= 0) return null;
+      const others = [];
+      for (let i = 0; i < playerCount; i++) {
+        if (i !== winnerIdx && i !== payer) others.push(i);
+      }
+      if (others.length === 0) return null;
+      const payments = [{ idx: payer, delta: -(total / 2) }];
+      others.forEach(i => payments.push({ idx: i, delta: -(total / 2) / others.length }));
+      payments.push({ idx: winnerIdx, delta: total });
+      return payments;
+    }
+    const ron = pts.ron;
+    if (typeof ron !== 'number' || ron <= 0) return null;
+    return [{ idx: payer, delta: -ron }, { idx: winnerIdx, delta: ron }];
+  }
+
   function handleAgari(winnerIdx, loserIdx, winTile, isTsumo, scoreRes) {
     if (game.roundOver) return; // 局終了処理は1回だけ
     game.roundOver = true;
@@ -2904,7 +2995,12 @@
       : { total: 0, ron: 0, oyaTsumo: 0, koTsumo: 0, honbaBonus: 0 };
     const sticksBonus = game.riichiSticks * 1000;
 
-    if (isTsumo) {
+    // M5: パオ（責任払い）が成立している場合は責任者が支払う
+    const paoPayments = computePaoPayments({ winnerIdx, loserIdx, isTsumo, scoreRes, playerCount: game.playerCount });
+    if (paoPayments) {
+      paoPayments.forEach(({ idx, delta }) => { game.players[idx].score += delta; });
+      winner.score += sticksBonus;
+    } else if (isTsumo) {
       let received = 0;
       game.players.forEach(p => {
         if (p.idx === winnerIdx) return;
@@ -3093,6 +3189,12 @@
     DOM.resultScoreDetails.textContent = scoreRes.isYakuman
       ? `${scoreRes.rankTitle || '役満'} (本場加算含む)`
       : `${scoreRes.han || 0}翻 ${scoreRes.fu || 0}符 (本場加算含む)`;
+
+    // M5: パオ（責任払い）の注記
+    if (scoreRes.pao && typeof scoreRes.pao.payer === 'number'
+        && game.players[scoreRes.pao.payer] && scoreRes.pao.payer !== winner.idx) {
+      DOM.resultScoreDetails.textContent += ` • パオ（${scoreRes.pao.yaku}）：${game.players[scoreRes.pao.payer].name}の責任払い`;
+    }
 
     // 演出: ランクバッジをスケールインさせる (クラス付け直しで毎回再生)
     if (DOM.resultScoreRank) {

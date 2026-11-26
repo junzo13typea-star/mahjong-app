@@ -671,6 +671,7 @@
             <button id="btnRuleKuikae" class="btn-3d-toggle active" title="喰い替え禁止（ポン・チー直後に同じ形になる牌を切れない）の有無を切替">喰い替え禁止: ON</button>
             <button id="btnTempo" class="btn-3d-toggle" title="対局テンポ（CPUの思考時間）を切替：ゆっくり→ふつう→高速">テンポ: ふつう</button>
             <button id="btnDifficulty" class="btn-3d-toggle" title="CPUの強さ（難易度）を切替：よわい→ふつう→つよい。判断ミス率と守備の精度が変わります">難易度: ふつう</button>
+            <button id="btnAutoRiichiDiscard" class="btn-3d-toggle" title="リーチ後の打牌を自動ツモ切りにする：ONのとき、リーチ後にツモ・カンなどのアクションが出てパスを選ぶと、ツモ牌を自動で切ります（ツモ和了は逃しません）">リーチ後オート打牌: OFF</button>
             <button id="btnFullscreen" class="btn-3d-toggle" title="対局画面を全画面表示にする（スマホ向け）。iPhoneでは疑似全画面モードになります">⛶ 全画面</button>
             <button id="btnSfxToggle" class="btn-3d-toggle active" title="効果音（打牌音・和了ファンファーレなど）の ON/OFF を切替">🔊 サウンド: ON</button>
           </div>
@@ -1021,6 +1022,7 @@
               <li>対局画面の上部バーで、人数（四人／三人）・対局形式（東風戦／半荘戦）・3D立体視を切り替えます。</li>
               <li>その下の「ルール」行では、赤ドラ／食いタン／喰い替え禁止／サウンド（効果音）のON・OFFを切り替えます。赤ドラの変更は次の新規対局から反映されます。</li>
               <li>「難易度」でCPUの強さ（よわい／ふつう／つよい）を切り替えます。よわいは判断ミスが多く守備がゆるく、つよいはミスが少なく守備が堅くなります。CPU3人の個性（攻撃・バランス・守備）はそのままに、全体の強さだけが変わります。</li>
+              <li>「リーチ後オート打牌」をONにすると、リーチ後にツモ・カンなどのアクションが出てパスを選んだ場合、ツモ牌を自動でツモ切りします。アクションが無い場合は従来どおり自動でツモ切りします。ツモ和了のチャンスがあるときはアクションが出るので逃しません。</li>
               <li>ルールや3D表示などの設定は自動で保存され、次回開いたときも引き継がれます。</li>
             </ul>
           </section>

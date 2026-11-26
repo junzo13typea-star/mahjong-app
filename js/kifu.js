@@ -283,6 +283,7 @@
         wallCount: state.wall.length,
         turn: state.turn,
         lastDiscard: state.lastDiscard ? { ...state.lastDiscard } : null,
+        lastEvent: idx > 0 ? rec.events[idx - 1] : null,
         end: (idx >= rec.events.length) ? (rec.end || null) : null,
       };
     }
@@ -311,7 +312,47 @@
   // ---------------- 再生画面 (ビューア) ----------------
 
   const WINDS = ['東', '南', '西', '北'];
-  const view = { game: null, rec: null, replay: null, timer: null };
+  const LOG_LIMIT = 12; // 手順ログに残す直近の件数
+  const view = { game: null, rec: null, replay: null, timer: null, speed: 1, body: null };
+
+  // 牌コードを読みやすい日本語表記にする (例: 5m→5萬、5mr→5萬(赤)、1z→東)
+  const HONOR_LABELS = { '1z': '東', '2z': '南', '3z': '西', '4z': '北', '5z': '白', '6z': '發', '7z': '中' };
+  const SUIT_LABELS = { m: '萬', p: '筒', s: '索' };
+  function tileLabel(code) {
+    if (typeof code !== 'string' || !code) return '';
+    const isRed = code.length === 3 && code[2] === 'r';
+    const base = normTile(code);
+    if (HONOR_LABELS[base]) return HONOR_LABELS[base] + (isRed ? '(赤)' : '');
+    const suit = SUIT_LABELS[base[1]];
+    if (!suit) return base;
+    return base[0] + suit + (isRed ? '(赤)' : '');
+  }
+
+  // 1手のイベントを日本語の説明文にする (純粋関数)
+  function describeEvent(ev, names) {
+    if (!ev || typeof ev !== 'object') return '';
+    const n = (names && names[ev.p]) || `プレイヤー${(typeof ev.p === 'number' ? ev.p + 1 : '?')}`;
+    switch (ev.t) {
+      case 'draw': return ev.rinshan ? `${n} が嶺上牌をツモ` : `${n} のツモ`;
+      case 'discard': return `${n} が ${tileLabel(ev.tile)} を切る` + (ev.tsumogiri ? '（ツモ切り）' : '');
+      case 'riichi': return `${n} がリーチ！`;
+      case 'pon': return `${n} が ${tileLabel(ev.tile)} をポン`;
+      case 'chi': {
+        const meld = (ev.handTiles && ev.handTiles.length === 2)
+          ? [ev.handTiles[0], ev.tile, ev.handTiles[1]].map(tileLabel).join('・')
+          : tileLabel(ev.tile);
+        return `${n} がチー（${meld}）`;
+      }
+      case 'minkan': return `${n} が ${tileLabel(ev.tile)} を明槓`;
+      case 'ankan': return `${n} が ${tileLabel(ev.tile)} を暗槓`;
+      case 'kakan': return `${n} が ${tileLabel(ev.tile)} を加槓`;
+      case 'kita': return `${n} が北を抜く`;
+      default: return `${n} の手順`;
+    }
+  }
+
+  // 自動再生の間隔 (ms)。速度は 0.5×=1800 / 1×=900 / 2×=450。
+  function autoInterval() { return Math.round(900 / (view.speed || 1)); }
 
   function roundLabel(rec) {
     const pc = rec.playerCount;
@@ -360,6 +401,35 @@
     if (btn) btn.textContent = '⏯ 自動再生';
   }
 
+  function startAuto(body) {
+    stopAuto();
+    const btn = document.getElementById('kifuAutoBtn');
+    if (btn) btn.textContent = '⏸ 一時停止';
+    view.timer = setInterval(() => {
+      view.replay.step();
+      renderStage(body);
+      if (view.replay.state().step >= view.replay.total) stopAuto();
+    }, autoInterval());
+  }
+
+  // キーボード操作: →で1手進む / ←で1手戻る / スペースで自動再生の切替。
+  // モーダルが開いているときだけ有効にする。
+  function onViewerKey(e) {
+    if (!view.replay || !view.body) return;
+    const modal = document.getElementById('kifuModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    if (e.key === 'ArrowRight') {
+      stopAuto(); view.replay.step(); renderStage(view.body);
+      if (e.preventDefault) e.preventDefault();
+    } else if (e.key === 'ArrowLeft') {
+      stopAuto(); view.replay.back(); renderStage(view.body);
+      if (e.preventDefault) e.preventDefault();
+    } else if (e.key === ' ') {
+      if (view.timer) stopAuto(); else startAuto(view.body);
+      if (e.preventDefault) e.preventDefault();
+    }
+  }
+
   function renderGames(body) {
     stopAuto();
     view.game = null; view.rec = null; view.replay = null;
@@ -405,6 +475,7 @@
     const game = view.game, rec = view.rec, replay = view.replay;
     const snap = replay.state();
     const names = gameNames(game);
+    view.body = body;
     body.innerHTML = '';
 
     const back = el('button', CTRL_BTN + 'margin-bottom:10px;', '← 局一覧へ戻る');
@@ -422,6 +493,13 @@
     head.appendChild(el('span', 'opacity:0.85;font-size:0.85rem;', `手順 ${snap.step} / ${snap.total}`));
     body.appendChild(head);
 
+    // 直前の手順 (何が起きたかが一目で分かるように)
+    const stepLine = el('div', '', snap.step === 0
+      ? '📌 配牌完了 — 「▶ 次へ」で1手ずつ進められます'
+      : `📌 手順${snap.step}：${describeEvent(snap.lastEvent, names)}`);
+    stepLine.className = 'kifu-step-line';
+    body.appendChild(stepLine);
+
     // 各プレイヤー
     snap.players.forEach((p, i) => {
       const windIdx = (i - rec.dealerIdx + rec.playerCount) % rec.playerCount;
@@ -430,6 +508,12 @@
       const title = el('div', 'color:#fef3c7;font-size:0.88rem;margin-bottom:4px;',
         `${WINDS[windIdx]}家 ${names[i]}　${scoreShown.toLocaleString()}点` +
         (p.isRiichi ? '　🔴リーチ' : '') + (p.kitaCount ? `　北×${p.kitaCount}` : ''));
+      // 直前のイベントがツモならそのプレイヤーが打牌番 (手番)
+      if (snap.lastEvent && snap.lastEvent.t === 'draw' && snap.lastEvent.p === i && !snap.end) {
+        const badge = el('span', '', ' ▶ 手番');
+        badge.className = 'kifu-turn-badge';
+        title.appendChild(badge);
+      }
       card.appendChild(title);
 
       const handRow = el('div', 'display:flex;flex-wrap:wrap;gap:1px;align-items:flex-end;');
@@ -451,14 +535,18 @@
       }
       card.appendChild(handRow);
 
-      // 河 (6枚ずつの行)
+      // 河 (6枚ずつの行)。最新の捨て牌は金枠で目立たせる。
       const kawaBox = el('div', 'margin-top:6px;');
       for (let r = 0; r * 6 < p.kawa.length; r++) {
         const row = el('div', 'display:flex;gap:1px;margin-bottom:1px;');
-        p.kawa.slice(r * 6, r * 6 + 6).forEach(k => {
+        p.kawa.slice(r * 6, r * 6 + 6).forEach((k, j) => {
           const t = tileEl(k.tile, true);
           if (k.called) t.style.opacity = '0.4';
           if (k.isRiichi) t.style.outline = '2px solid #f59e0b';
+          const isLatest = (r * 6 + j === p.kawa.length - 1)
+            && snap.lastDiscard && snap.lastDiscard.p === i
+            && normTile(k.tile) === normTile(snap.lastDiscard.tile);
+          if (isLatest) t.classList.add('kifu-last-discard');
           row.appendChild(t);
         });
         kawaBox.appendChild(row);
@@ -472,6 +560,63 @@
       body.appendChild(el('div', 'background:rgba(245,158,11,0.15);border:1px solid #f59e0b;color:#fef3c7;border-radius:10px;padding:8px 12px;margin:4px 0 10px;font-size:0.92rem;',
         `🏁 ${endSummary(game, rec)}`));
     }
+
+    // 手順ログ (直近の流れが追えるように。現在地の行だけ強調)
+    if (snap.step > 0) {
+      const log = el('div', '');
+      log.className = 'kifu-log';
+      log.id = 'kifuEventLog';
+      const shown = rec.events.slice(0, snap.step).slice(-LOG_LIMIT);
+      const head_text = snap.step > LOG_LIMIT
+        ? `📜 手順ログ（全${snap.step}手のうち直近${shown.length}手）`
+        : '📜 手順ログ';
+      const logHead = el('div', '', head_text);
+      logHead.className = 'kifu-log-head';
+      log.appendChild(logHead);
+      shown.forEach((ev, k) => {
+        const n = snap.step - shown.length + k + 1;
+        const line = el('div', '', `手順${n}　${describeEvent(ev, names)}`);
+        line.className = 'kifu-log-line' + (k === shown.length - 1 ? ' is-now' : '');
+        log.appendChild(line);
+      });
+      body.appendChild(log);
+    }
+
+    // シークバー＋再生速度 (ドラッグ中は再描画しないよう change で確定する)
+    const seekRow = el('div', '');
+    seekRow.className = 'kifu-seek-row';
+    const seek = document.createElement('input');
+    seek.type = 'range';
+    seek.id = 'kifuSeek';
+    seek.min = '0';
+    seek.max = String(snap.total);
+    seek.value = String(snap.step);
+    seek.setAttribute ? seek.setAttribute('aria-label', '手順を指定して移動') : null;
+    seek.className = 'kifu-seek';
+    seek.addEventListener('change', (e) => {
+      const n = parseInt(e.target.value, 10);
+      if (isNaN(n)) return;
+      stopAuto();
+      replay.seek(n);
+      renderStage(body);
+    });
+    seekRow.appendChild(seek);
+    const speed = document.createElement('select');
+    speed.id = 'kifuSpeed';
+    speed.className = 'kifu-speed';
+    [['0.5', '0.5× ゆっくり'], ['1', '1× ふつう'], ['2', '2× はやい']].forEach(([v, label]) => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = label;
+      speed.appendChild(opt);
+    });
+    speed.value = String(view.speed);
+    speed.addEventListener('change', (e) => {
+      view.speed = parseFloat(e.target.value) || 1;
+      if (view.timer) startAuto(body);
+    });
+    seekRow.appendChild(speed);
+    body.appendChild(seekRow);
 
     // コントロール
     const ctrls = el('div', 'display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;');
@@ -488,13 +633,7 @@
     mkBtn('⏭ 最後', () => { stopAuto(); replay.seek(replay.total); renderStage(body); });
     mkBtn('⏯ 自動再生', () => {
       if (view.timer) { stopAuto(); return; }
-      const btn = document.getElementById('kifuAutoBtn');
-      if (btn) btn.textContent = '⏸ 一時停止';
-      view.timer = setInterval(() => {
-        replay.step();
-        renderStage(body);
-        if (replay.state().step >= replay.total) stopAuto();
-      }, 900);
+      startAuto(body);
     }, 'kifuAutoBtn');
     body.appendChild(ctrls);
   }
@@ -520,8 +659,9 @@
     if (close) close.addEventListener('click', closeViewer);
     const modal = document.getElementById('kifuModal');
     if (modal) modal.addEventListener('click', (e) => { if (e.target === modal) closeViewer(); });
+    if (typeof document.addEventListener === 'function') document.addEventListener('keydown', onViewerKey);
   }
   if (typeof document !== 'undefined') wireViewer();
 
-  global.MahjongKifu = { ...recorder, createReplay, openViewer, closeViewer, STORAGE_KEY, MAX_GAMES };
+  global.MahjongKifu = { ...recorder, createReplay, openViewer, closeViewer, describeEvent, tileLabel, STORAGE_KEY, MAX_GAMES, _onViewerKey: onViewerKey, _autoInterval: autoInterval, _LOG_LIMIT: LOG_LIMIT };
 })(typeof window !== 'undefined' ? window : globalThis);

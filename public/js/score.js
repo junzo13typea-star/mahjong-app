@@ -256,9 +256,11 @@
     // 役満チェック (四暗刻, 大三元, 緑一色, 字一色, 清老頭, 四槓子)
     const yakumanList = checkYakuman(allTiles, decomp, allMentsu, isMenzen, winIdx, isTsumo);
     if (yakumanList.length > 0) {
-      return buildFinalResult({
+      const res = buildFinalResult({
         yakuList: yakumanList, fu: 0, isTsumo, isDealer, options, redDoraCount
       });
+      res.pao = detectPao(melds, yakumanList); // M5: パオ（責任払い）の判定
+      return res;
     }
 
     // 1. 平和 (Pinfu) 判定
@@ -855,7 +857,44 @@
     return list;
   }
 
+  /**
+   * M5 (SW v39): パオ（責任払い）の判定。
+   * 大三元・大四喜の役満で、完成した最後の刻子が他家の捨て牌からの
+   * ポン／明槓だった場合、その捨て牌を出したプレイヤーが責任払いとなる。
+   * 暗槓・ツモ・手牌内での完成ではパオは発生しない。
+   * game.js はポン／明槓の副露に `from`（捨て牌を出したプレイヤーの idx）を
+   * 記録する。点数計算タブ等 from が無い副露ではパオなし（null）を返す。
+   * 副露は時系列順に並ぶ前提で、対象の刻子のうち最後のものが完成形。
+   * @returns {{ yaku: string, payer: number } | null}
+   */
+  function detectPao(melds, yakuList) {
+    if (!Array.isArray(melds) || !Array.isArray(yakuList)) return null;
+    const hasYaku = (name) => yakuList.some(y => y && y.name === name);
+    const tripletMelds = melds.filter(m => m && (m.type === 'pon' || m.type === 'kan' || m.type === 'ankan')
+      && Array.isArray(m.tiles) && m.tiles.length > 0);
+    const tileOf = (m) => window.tileToIndex(window.normalizeTile(m.tiles[0]));
+    const payerOfLast = (kinds) => {
+      const hits = tripletMelds.filter(m => kinds.indexOf(tileOf(m)) >= 0);
+      const distinct = new Set(hits.map(tileOf));
+      if (distinct.size !== kinds.length) return null;
+      const last = hits[hits.length - 1];
+      if (!last || (last.type !== 'pon' && last.type !== 'kan')) return null; // 暗槓で完成ならパオなし
+      if (typeof last.from !== 'number' || !Number.isFinite(last.from)) return null;
+      return last.from;
+    };
+    if (hasYaku('大三元')) {
+      const payer = payerOfLast([31, 32, 33]);
+      if (payer !== null) return { yaku: '大三元', payer };
+    }
+    if (hasYaku('大四喜')) {
+      const payer = payerOfLast([27, 28, 29, 30]);
+      if (payer !== null) return { yaku: '大四喜', payer };
+    }
+    return null;
+  }
+
   // Global expose
   window.calculateScore = calculateScore;
+  window.detectPao = detectPao; // M5: テスト用に公開
 
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));

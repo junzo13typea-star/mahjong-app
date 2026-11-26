@@ -4141,3 +4141,87 @@ body.fs-mode #tab-game {
 @media (prefers-reduced-motion: reduce) {
   .fu-row { animation: none; }
 }
+
+/* ===== 牌譜ビューア磨き込み (ブラッシュアップ U12 / SW v40) ===== */
+/* 直前の手順ライン */
+.kifu-step-line {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  font-size: 0.92rem;
+}
+/* 手番バッジ */
+.kifu-turn-badge {
+  color: #fbbf24;
+  font-weight: 700;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+/* 最新の捨て牌 (金枠＋ほのかな光) */
+.kifu-last-discard {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: 0;
+  filter: brightness(1.12);
+}
+/* 手順ログ */
+.kifu-log {
+  max-height: 132px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 4px 0 10px;
+  color: #fef3c7;
+  font-size: 0.85rem;
+}
+.kifu-log-head {
+  opacity: 0.75;
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+}
+.kifu-log-line {
+  padding: 2px 6px;
+  border-radius: 6px;
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kifu-log-line.is-now {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fffbeb;
+  opacity: 1;
+  font-weight: 700;
+}
+/* シークバー＋速度セレクト */
+.kifu-seek-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 2px 0 4px;
+}
+.kifu-seek {
+  flex: 1;
+  min-width: 0;
+  accent-color: #f59e0b;
+  cursor: pointer;
+}
+.kifu-speed {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fef3c7;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.kifu-speed option {
+  color: #1f2937;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kifu-last-discard { filter: none; }
+}
