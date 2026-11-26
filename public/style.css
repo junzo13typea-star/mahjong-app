@@ -4225,3 +4225,71 @@ body.fs-mode #tab-game {
 @media (prefers-reduced-motion: reduce) {
   .kifu-last-discard { filter: none; }
 }
+
+/* ===== M7 (SW v43): 実績・称号 ===== */
+/* 対局終了モーダルの称号行 */
+.result-title-line {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fbbf24;
+}
+/* 対局終了モーダルの新規実績行 */
+.result-new-ach {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fde68a;
+  animation: achPop 0.45s ease-out;
+}
+@keyframes achPop {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+/* 成績モーダルの実績セクション */
+.ach-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+.ach-header {
+  font-weight: 700;
+  color: #fbbf24;
+  margin-bottom: 8px;
+}
+.ach-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.ach-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+.ach-item.ach-locked {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  opacity: 0.6;
+}
+.ach-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.ach-title {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ach-desc {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+@media (prefers-reduced-motion: reduce) {
+  .result-new-ach { animation: none; }
+}

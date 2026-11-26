@@ -472,6 +472,8 @@
       resultScorePoints: document.getElementById('resultScorePoints'),
       resultScoreRank: document.getElementById('resultScoreRank'),
       resultScoreDetails: document.getElementById('resultScoreDetails'),
+      resultTitleLine: document.getElementById('resultTitleLine'),
+      resultNewAch: document.getElementById('resultNewAch'),
       btnNextRound: document.getElementById('btnNextRound'),
 
       // 成績モーダル
@@ -655,6 +657,13 @@
         <div class="stats-value">${value}</div>
         ${sub ? `<div class="stats-sub">${sub}</div>` : ''}
       </div>`;
+    // M7: 実績・称号の一覧（解除済みは色付き、未解除は鍵付きで表示する）
+    const ach = readAchievements();
+    const achItems = ACHIEVEMENT_DEFS.map(d => {
+      const got = !!ach.unlocked[d.id];
+      return `<div class="ach-item${got ? '' : ' ach-locked'}"><span class="ach-icon">${got ? d.icon : '🔒'}</span><span class="ach-title">${d.title}</span><span class="ach-desc">${d.desc}</span></div>`;
+    }).join('');
+    const achCount = ACHIEVEMENT_DEFS.filter(d => ach.unlocked[d.id]).length;
     DOM.statsBody.innerHTML = `
       <div class="stats-grid">
         ${item('対局数', `${s.games} 回`, `総局数 ${s.rounds} 局`)}
@@ -664,6 +673,10 @@
         ${item('放銃率', pct(s.dealIns, s.playerDiscards), `${s.dealIns} 回 / 打牌 ${s.playerDiscards} 回`)}
         ${item('リーチ率', pct(s.riichi, s.rounds), `${s.riichi} 回`)}
         ${item('流局', `${s.ryukyoku} 回`, '')}
+      </div>
+      <div class="ach-section">
+        <div class="ach-header">🏅 称号：${currentTitle()}（実績 ${achCount}/${ACHIEVEMENT_DEFS.length}）</div>
+        <div class="ach-grid">${achItems}</div>
       </div>
       <p class="stats-note">和了率・リーチ率は総局数ベース、放銃率は総打牌数ベースです。</p>`;
   }
@@ -675,6 +688,103 @@
 
   function closeStatsModal() {
     if (DOM.statsModal) DOM.statsModal.classList.add('hidden');
+  }
+
+  // ---------- 実績・称号 (M7: localStorage・プレイヤー本人の通算実績) ----------
+  // 称号は一覧の後ろほど上位。現在の称号は解除済みのうち最も後ろのもの。
+  const ACHIEVEMENTS_KEY = 'mahjong_achievements_v1';
+  const DEFAULT_TITLE = '見習い雀士';
+  // 対局中の出来事（和了・放銃のたびに更新し、終局時にまとめて判定する）
+  let matchAch = { yakuman: false, mangan: false, riichiWin: false, dealIns: 0, finished: false };
+
+  const ACHIEVEMENT_DEFS = [
+    { id: 'first-game', icon: '🎌', title: '初陣', desc: '対局を1回完了する', check: (s, m) => s.games >= 1 },
+    { id: 'first-top', icon: '🥇', title: '初優勝', desc: '対局で1位を取る', check: (s, m) => s.rankCounts[0] >= 1 },
+    { id: 'games-10', icon: '⚔️', title: '十戦錬磨', desc: '対局を10回完了する', check: (s, m) => s.games >= 10 },
+    { id: 'riichi-win', icon: '🎯', title: 'リーチ成就', desc: 'リーチして和了する', check: (s, m) => !!m.riichiWin },
+    { id: 'mangan', icon: '💥', title: '満貫突破', desc: '満貫以上で和了する', check: (s, m) => !!m.mangan },
+    { id: 'yakuman', icon: '👑', title: '役満成就', desc: '役満で和了する', check: (s, m) => !!m.yakuman },
+    { id: 'no-deal-in', icon: '🛡️', title: '鉄壁', desc: '放銃なしで1対局を終える', check: (s, m) => !!m.finished && m.dealIns === 0 },
+    { id: 'top-streak-2', icon: '🔥', title: '連覇', desc: '2連続でトップを取る', check: (s, m) => (m.topStreak || 0) >= 2 },
+    { id: 'top-streak-3', icon: '🏆', title: '三連覇', desc: '3連続でトップを取る', check: (s, m) => (m.topStreak || 0) >= 3 },
+    { id: 'top-rate-50', icon: '🌟', title: '常勝', desc: '10対局以上でトップ率50%以上', check: (s, m) => s.games >= 10 && s.rankCounts[0] / s.games >= 0.5 }
+  ];
+
+  function defaultAchievements() {
+    return { unlocked: {}, topStreak: 0 };
+  }
+
+  function readAchievements() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        const raw = localStorage.getItem(ACHIEVEMENTS_KEY);
+        if (raw) {
+          const a = Object.assign(defaultAchievements(), JSON.parse(raw));
+          if (!a.unlocked || typeof a.unlocked !== 'object') a.unlocked = {};
+          if (typeof a.topStreak !== 'number' || a.topStreak < 0) a.topStreak = 0;
+          return a;
+        }
+      }
+    } catch (e) { /* 読めない環境では空の実績として扱う */ }
+    return defaultAchievements();
+  }
+
+  function writeAchievements(a) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(a));
+      }
+    } catch (e) { /* 保存できない環境では静かに諦める */ }
+  }
+
+  // 解除条件を満たした実績のうち未解除のものを返す（純粋関数。stats=通算成績、match=対局中の出来事）
+  function evaluateAchievements(stats, match, unlocked) {
+    const newly = [];
+    ACHIEVEMENT_DEFS.forEach(d => {
+      if (unlocked && unlocked[d.id]) return;
+      let ok = false;
+      try { ok = !!d.check(stats, match || {}); } catch (e) { ok = false; }
+      if (ok) newly.push(d);
+    });
+    return newly;
+  }
+
+  // 実績を判定して新規解除分を保存し、その一覧を返す
+  function updateAchievements(match) {
+    const a = readAchievements();
+    const newly = evaluateAchievements(readStats(), match, a.unlocked);
+    if (newly.length > 0) {
+      newly.forEach(d => { a.unlocked[d.id] = new Date().toISOString(); });
+      writeAchievements(a);
+    }
+    return newly;
+  }
+
+  // 現在の称号（解除済みのうち一覧で最も後ろのもの。未解除なら既定の称号）
+  function currentTitle() {
+    const a = readAchievements();
+    let title = DEFAULT_TITLE;
+    ACHIEVEMENT_DEFS.forEach(d => { if (a.unlocked[d.id]) title = d.title; });
+    return title;
+  }
+
+  // 和了時の実績イベントを対局中の記録へ反映する（単独和了・ダブロン共通）
+  function recordAgariAchievements(winnerIdx, loserIdx, isTsumo, scoreRes) {
+    if (winnerIdx === 0) {
+      if (scoreRes && scoreRes.isYakuman) matchAch.yakuman = true;
+      const pts = (scoreRes && scoreRes.points && typeof scoreRes.points === 'object') ? scoreRes.points : {};
+      const baseTotal = (typeof pts.total === 'number' ? pts.total : 0)
+        - (typeof pts.honbaBonus === 'number' ? pts.honbaBonus : 0);
+      if (baseTotal >= 8000) matchAch.mangan = true;
+      if (game.players[0] && game.players[0].isRiichi) matchAch.riichiWin = true;
+    }
+    if (!isTsumo && loserIdx === 0) matchAch.dealIns += 1;
+  }
+
+  // 対局終了モーダル以外では称号・新規実績の行を出さない
+  function hideAchievementsLines() {
+    if (DOM.resultTitleLine) DOM.resultTitleLine.style.display = 'none';
+    if (DOM.resultNewAch) DOM.resultNewAch.style.display = 'none';
   }
 
   // ---------- 対局の途中保存 / 再開 (localStorage) ----------
@@ -1083,6 +1193,7 @@
       DOM.btnResetStats.addEventListener('click', () => {
         showConfirmDialog('成績データをすべてリセットしますか？', () => {
           writeStats(defaultStats());
+          writeAchievements(defaultAchievements()); // M7: 実績・称号も一緒にリセットする
           renderStatsBody();
           showGameToast('成績をリセットしました');
         });
@@ -1164,6 +1275,7 @@
     clearGameSave();
     saveOfferPending = false;
     statsMatchCounted = false;
+    matchAch = { yakuman: false, mangan: false, riichiWin: false, dealIns: 0, finished: false }; // M7: 対局中の実績イベントをリセット
     updateResumeButton();
     game.roundWind = '1z'; // 東場から開始
     game.roundNum = 0;
@@ -2129,6 +2241,9 @@
       if (winners.some(w => w.idx === 0)) { s.wins += 1; s.winsRon += 1; }
       if (loserIdx === 0) s.dealIns += 1;
     });
+    // M7: ダブロン/トリプルロンでも対局中の実績イベントを記録する
+    winners.forEach(w => recordAgariAchievements(w.idx, loserIdx, false, w.scoreRes));
+    updateAchievements(matchAch);
     const loser = game.players[loserIdx];
     const sticksBonus = game.riichiSticks * 1000;
     winners.forEach((w, i) => {
@@ -2153,6 +2268,7 @@
 
   function showMultiAgariModal(winners, loserIdx, tile) {
     if (!DOM.gameResultModal) return;
+    hideAchievementsLines(); // M7: ダブロンモーダルに称号行は出さない
     const label = winners.length >= 3 ? 'トリプルロン' : 'ダブロン';
     DOM.resultModalTitle.textContent = `🀄️ ${label}！`;
     DOM.resultWinnerAvatar.textContent = '🎉';
@@ -2987,6 +3103,9 @@
       }
       if (!isTsumo && loserIdx === 0) s.dealIns += 1;
     });
+    // M7: 和了のたびに実績を判定し、終局を待たずに保存する
+    recordAgariAchievements(winnerIdx, loserIdx, isTsumo, scoreRes);
+    updateAchievements(matchAch);
     const winner = game.players[winnerIdx];
     // calculateScore の返却形式: points = { total, ron, oyaTsumo, koTsumo, honbaBonus }
     // oyaTsumo / koTsumo は「1人あたりの支払額」(本場分込み)、ron は本場込み総額
@@ -3038,6 +3157,7 @@
     showGameToast(`流局（${reason}）`, 'orange');
 
     if (!DOM.gameResultModal) return;
+    hideAchievementsLines(); // M7: 途中流局モーダルに称号行は出さない
     DOM.resultModalTitle.textContent = `💨 途中流局（${reason}）`;
     DOM.resultWinnerAvatar.textContent = '⚖️';
     DOM.resultWinnerName.textContent = reason;
@@ -3124,6 +3244,7 @@
   function showAgariModal(winner, loserIdx, winTile, isTsumo, scoreRes, fxDelaySec) {
     const fx = fxDelaySec || 0; // v34: 「間」演出の間、モーダル内の段階演出を遅らせる
     if (!DOM.gameResultModal) return;
+    hideAchievementsLines(); // M7: 和了モーダルに称号行は出さない
 
     DOM.resultModalTitle.textContent = isTsumo ? '🀄️ ツモ和了（ツモアガリ）！' : '🀄️ ロン和了（栄和）！';
     if (!fx) showCallout(isTsumo ? 'ツモ！' : 'ロン！', 'agari', winner.name); // v34: 「間」演出中はラベルが兼ねる
@@ -3218,6 +3339,7 @@
 
   function showRyukyokuModal(tenpais, notens) {
     if (!DOM.gameResultModal) return;
+    hideAchievementsLines(); // M7: 流局モーダルに称号行は出さない
 
     DOM.resultModalTitle.textContent = '💨 流局（荒野流局）';
     DOM.resultWinnerAvatar.textContent = '⚖️';
@@ -3240,6 +3362,7 @@
     const ranking = [...game.players].sort((a, b) => b.score - a.score);
 
     // 対局成績を記録する (モーダル再表示で二重に数えない)
+    let newlyUnlocked = [];
     if (!statsMatchCounted) {
       statsMatchCounted = true;
       const myRank = ranking.findIndex(p => p.idx === 0);
@@ -3247,6 +3370,11 @@
         s.games += 1;
         if (myRank >= 0 && myRank < 4) s.rankCounts[myRank] += 1;
       });
+      // M7: 連続トップを更新し、対局終了時の実績を判定する
+      const ach = readAchievements();
+      ach.topStreak = (myRank === 0) ? (ach.topStreak || 0) + 1 : 0;
+      writeAchievements(ach);
+      newlyUnlocked = updateAchievements(Object.assign({}, matchAch, { finished: true, topStreak: ach.topStreak }));
     }
 
     if (window.MahjongKifu) window.MahjongKifu.finishGame(game.players.map(p => p.score), ranking.findIndex(p => p.idx === 0) + 1);
@@ -3267,6 +3395,20 @@
     DOM.resultScorePoints.textContent = `${ranking[0].score.toLocaleString()} 点`;
     DOM.resultScoreRank.textContent = 'ゲームセット';
     DOM.resultScoreDetails.textContent = ranking[0].idx === 0 ? 'お見事！勝利おめでとうございます！' : '惜しい！次回リベンジを果たしましょう！';
+
+    // M7: 称号と今対局で新たに解除した実績を表示する
+    if (DOM.resultTitleLine) {
+      DOM.resultTitleLine.style.display = '';
+      DOM.resultTitleLine.textContent = `🏅 称号：${currentTitle()}`;
+    }
+    if (DOM.resultNewAch) {
+      if (newlyUnlocked.length > 0) {
+        DOM.resultNewAch.style.display = '';
+        DOM.resultNewAch.textContent = newlyUnlocked.map(d => `🎖 新たな実績「${d.title}」を獲得！`).join('　');
+      } else {
+        DOM.resultNewAch.style.display = 'none';
+      }
+    }
 
     DOM.btnNextRound.textContent = '新規対局を開始する';
     DOM.gameResultModal.classList.remove('hidden');

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v42'; // U13: PWA最終点検でアイコンをPNG化したため更新
+const CACHE_NAME = 'mahjong-ai-v43'; // U13: PWA最終点検でアイコンをPNG化したため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
