@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mahjong-ai-v37'; // M3: 他家リーチ中の持続ビネット (卓の縁に薄い赤ビネット) を配信するため更新
+const CACHE_NAME = 'mahjong-ai-v38'; // M4: 和了モーダルの符内訳表示を配信するため更新
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

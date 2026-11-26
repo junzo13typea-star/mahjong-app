@@ -301,6 +301,53 @@
     } catch (e) { /* 演出のみ: 失敗しても無視 */ }
   }
 
+  // M4: 和了モーダルに符の内訳を表示する
+  // scoreRes.fuBreakdown は score.js の calculateFu が返す [{label, fu}, ...]。
+  // 切り上げで表示符と内訳の合計が違う場合 (例: 22符 → 30符) はその旨を1行で示す。
+  // 役満 (fu=0・内訳なし) は表示しない。七対子は内訳が無いため固定25符として1行出す。
+  function buildFuBreakdownHtml(scoreRes, opts) {
+    const o = opts || {};
+    if (!scoreRes || typeof scoreRes !== 'object') return '';
+    const fu = scoreRes.fu || 0;
+    if (fu <= 0) return '';
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const breakdown = Array.isArray(scoreRes.fuBreakdown) ? scoreRes.fuBreakdown : [];
+    let rows = breakdown.map((f) => ({ label: f.label || f.desc || '符', fu: f.fu || 0 }));
+    if (rows.length === 0) {
+      const isChiitoitsu = (scoreRes.yakuList || []).some((y) => y && y.name && y.name.indexOf('七対子') >= 0);
+      rows = [{ label: isChiitoitsu ? '七対子 (固定)' : '固定符', fu }];
+    }
+    const rawSum = rows.reduce((s, r) => s + r.fu, 0);
+    const delayBase = o.delayBase || 0;
+    let html = '';
+    if (o.title) html += `<div class="result-fu-winner">${esc(o.title)}</div>`;
+    rows.forEach((r, i) => {
+      const delay = delayBase > 0 ? ` style="animation-delay:${(delayBase + 0.15 + i * 0.08).toFixed(2)}s"` : '';
+      html += `<div class="fu-row"${delay}><span class="fu-label">${esc(r.label)}</span><span class="fu-value">+${r.fu}符</span></div>`;
+    });
+    if (rawSum !== fu) {
+      html += `<div class="fu-row fu-total"><span class="fu-label">切り上げ: ${rawSum}符 → ${fu}符</span><span class="fu-value">${fu}符</span></div>`;
+    } else {
+      html += `<div class="fu-row fu-total"><span class="fu-label">合計</span><span class="fu-value">${fu}符</span></div>`;
+    }
+    return html;
+  }
+
+  // M4: 符の内訳を和了モーダルへ描画する (表示するものが無ければ隠す)
+  function renderFuBreakdown(sectionEl, listEl, scoreRes, opts) {
+    if (!sectionEl || !listEl) return;
+    const html = buildFuBreakdownHtml(scoreRes, opts);
+    if (!html) { sectionEl.style.display = 'none'; listEl.innerHTML = ''; return; }
+    listEl.innerHTML = html;
+    sectionEl.style.display = '';
+  }
+
+  // M4: 流局・終局モーダルでは符の内訳を隠す
+  function hideFuBreakdown(sectionEl, listEl) {
+    if (sectionEl) sectionEl.style.display = 'none';
+    if (listEl) listEl.innerHTML = '';
+  }
+
   function cacheDom() {
     DOM = {
       mahjongTableMat: document.getElementById('mahjongTableMat'),
@@ -402,6 +449,8 @@
       resultUraSection: document.getElementById('resultUraSection'),
       resultUraTiles: document.getElementById('resultUraTiles'),
       resultYakuList: document.getElementById('resultYakuList'),
+      resultFuSection: document.getElementById('resultFuSection'),
+      resultFuList: document.getElementById('resultFuList'),
       resultScorePoints: document.getElementById('resultScorePoints'),
       resultScoreRank: document.getElementById('resultScoreRank'),
       resultScoreDetails: document.getElementById('resultScoreDetails'),
@@ -2117,6 +2166,13 @@
     DOM.resultScoreRank.textContent = label;
     DOM.resultScoreDetails.textContent = `合計 ${total}点 (供託は先頭の和了者へ)`;
 
+    // M4: ダブロン/トリプルロンは和了者ごとに符の内訳を出す (役満の和了者は内訳なし)
+    if (DOM.resultFuSection && DOM.resultFuList) {
+      DOM.resultFuList.innerHTML = winners.map((w) =>
+        buildFuBreakdownHtml(w.scoreRes, { title: game.players[w.idx].name })).join('');
+      DOM.resultFuSection.style.display = DOM.resultFuList.innerHTML ? '' : 'none';
+    }
+
     sfx('agari', winners.some(w => w.scoreRes.isYakuman));
     DOM.gameResultModal.classList.remove('hidden');
   }
@@ -3023,6 +3079,9 @@
       DOM.resultYakuList.appendChild(li);
     });
 
+    // M4: 符の内訳を表示 (役満は符がないため非表示。ドラめくり・役スタンプと同じ fx 遅延で追従)
+    renderFuBreakdown(DOM.resultFuSection, DOM.resultFuList, scoreRes, { delayBase: fx });
+
     // 点数は 0 → 確定値へカウントアップ表示 (最終値は必ず正確な値で止まる)
     if (fx > 0) {
       DOM.resultScorePoints.textContent = '0 点';
@@ -3066,6 +3125,7 @@
     DOM.resultHandTiles.innerHTML = '';
     DOM.resultDoraTiles.innerHTML = '';
     if (DOM.resultUraSection) DOM.resultUraSection.style.display = 'none'; // v33: 裏ドラ欄は和了モーダル専用
+    hideFuBreakdown(DOM.resultFuSection, DOM.resultFuList); // M4: 流局に符の内訳はない
     DOM.resultYakuList.innerHTML = '<li class="yaku-badge-item">ノーテン罰符授受（計3,000点）</li>';
     DOM.resultScorePoints.textContent = '流局';
     DOM.resultScoreRank.textContent = game.lastRoundRenchan ? '親連荘' : '親流れ';
@@ -3094,6 +3154,7 @@
     DOM.resultAgariType.textContent = `${game.playerCount}人打・${game.matchLength === 'tonpuu' ? '東風戦' : '半荘戦'} 完了`;
 
     DOM.resultHandTiles.innerHTML = '';
+    hideFuBreakdown(DOM.resultFuSection, DOM.resultFuList); // M4: 終局モーダルに符の内訳はない
     DOM.resultYakuList.innerHTML = ranking.map((p, rank) => `
       <li class="yaku-badge-item" style="justify-content: space-between;">
         <span>第${rank + 1}位: ${p.avatar} ${p.name}</span>

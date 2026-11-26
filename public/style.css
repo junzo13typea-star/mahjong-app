@@ -4087,3 +4087,57 @@ body.fs-mode #tab-game {
     inset 0 0 70px rgba(220, 38, 38, 0.30),
     inset 0 0 22px rgba(220, 38, 38, 0.16);
 }
+
+/* ===== v38/M4: 和了モーダルの符内訳 ===== */
+/* 役リストと同じ行スタイルで、符だけ金色にして読みやすくする。
+   切り上げがある場合 (22符 → 30符など) は合計行にその旨を示す。 */
+.result-fu-section {
+  margin-bottom: 14px;
+}
+.result-fu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fu-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: #e2e8f0;
+  animation: fuFadeIn 0.3s ease both;
+}
+.fu-label {
+  text-align: left;
+}
+.fu-value {
+  color: #fbbf24;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fu-row.fu-total {
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(245, 158, 11, 0.10);
+  font-weight: 700;
+  color: #f8fafc;
+}
+.result-fu-winner {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--gold-accent);
+  margin: 6px 0 2px;
+}
+.result-fu-winner:first-child {
+  margin-top: 0;
+}
+@keyframes fuFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fu-row { animation: none; }
+}
