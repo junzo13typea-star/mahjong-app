@@ -285,6 +285,22 @@
     } catch (e) { /* 演出のみ: 失敗しても無視 */ }
   }
 
+  // M3: 他家リーチ中かどうか (0番=自分を除く。三人麻雀は1・2番が他家)
+  function hasOpponentRiichi(players) {
+    if (!Array.isArray(players)) return false;
+    return players.some((p, i) => i !== 0 && p && p.isRiichi);
+  }
+
+  // M3: 他家リーチ中は卓の縁に薄い赤ビネットを持続表示する
+  // (宣言時の danger-pulse とは別・静止表示。renderBoard から毎回呼ぶ)
+  function updateRiichiVignette() {
+    try {
+      const vp = document.querySelector('.mahjong-table-viewport');
+      if (!vp) return;
+      vp.classList.toggle('riichi-vignette', hasOpponentRiichi(game.players));
+    } catch (e) { /* 演出のみ: 失敗しても無視 */ }
+  }
+
   function cacheDom() {
     DOM = {
       mahjongTableMat: document.getElementById('mahjongTableMat'),
@@ -3187,6 +3203,9 @@
     if (DOM.riichiFlagShimocha && game.players[1]) DOM.riichiFlagShimocha.style.display = game.players[1].isRiichi ? 'inline-block' : 'none';
     if (DOM.riichiFlagToimen && game.players[2]) DOM.riichiFlagToimen.style.display = game.players[2].isRiichi ? 'inline-block' : 'none';
     if (DOM.riichiFlagKamicha && game.players[3]) DOM.riichiFlagKamicha.style.display = game.players[3].isRiichi ? 'inline-block' : 'none';
+
+    // M3: 他家リーチ中は卓の縁に薄い赤ビネットを持続表示
+    updateRiichiVignette();
 
     // 河の描画
     renderKawa(0, DOM.kawaJibun);

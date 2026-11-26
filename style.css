@@ -4077,3 +4077,13 @@ body.fs-mode #tab-game {
 .cpu-style-attack { color: #fca5a5; background: rgba(239, 68, 68, 0.22); }
 .cpu-style-balance { color: #93c5fd; background: rgba(59, 130, 246, 0.22); }
 .cpu-style-defense { color: #86efac; background: rgba(34, 197, 94, 0.22); }
+
+/* ===== v37/M3: 他家リーチ中の持続ビネット ===== */
+/* 宣言時の danger-pulse (1.3sのアニメーション) とは別に、他家リーチ中はずっと
+   卓の縁に薄い赤いビネットを表示する。静止表示のため prefers-reduced-motion の対象外。
+   .mahjong-table-viewport には既に border-radius: 26px があるため、inset の影はその角丸に沿う。 */
+.mahjong-table-viewport.riichi-vignette {
+  box-shadow:
+    inset 0 0 70px rgba(220, 38, 38, 0.30),
+    inset 0 0 22px rgba(220, 38, 38, 0.16);
+}
